@@ -23,6 +23,11 @@ class VerionerTest(unittest.TestCase):
         docs = [d for d in yaml.load_all(result)]
         self.assertEqual(docs, deployment_object)
 
+    def test_set_image_tag_identical_new_tag(self):
+        configuration_path = os.path.join(get_tests_path(), "deployment.yml")
+        with self.assertRaises(deployversioner.deployversioner.VersionUnchangedException):
+            deployversioner.deployversioner.set_image_tag(configuration_path, "master-9")
+
     def test_parse_image(self):
         image = "docker-io.dbc.dk/author-name-suggester-service:master-9"
         imagename, image_tag = deployversioner.deployversioner.parse_image(image)
