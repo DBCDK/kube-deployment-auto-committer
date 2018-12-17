@@ -16,6 +16,11 @@ import yaml
 class VersionerError(Exception):
     pass
 
+# this is a convenience exception to be able to avoid making commits if the
+# image tag is unchanged. it doesn't really signify an error
+class VersionUnchangedException(Exception):
+    pass
+
 def set_image_tag(configuration_path: str, new_image_tag: str) -> str:
     with open(configuration_path) as fp:
         docs = [d for d in yaml.load_all(fp)]
@@ -32,7 +37,8 @@ def set_image_tag(configuration_path: str, new_image_tag: str) -> str:
                         containers[0]["image"] = "{}:{}".format(imagename,
                             new_image_tag)
                     else:
-                        print("new image tag matches old, nothing to do")
+                        raise VersionUnchangedException(
+                            "new image tag matches old, nothing to do")
                 except IndexError as e:
                     raise VersionerError(e)
         return yaml.dump_all(docs)
@@ -80,10 +86,12 @@ def setup_args() -> argparse.Namespace:
 
 def main():
     args = setup_args()
-    content = set_image_tag(args.deployment_configuration, args.image_tag)
     try:
+        content = set_image_tag(args.deployment_configuration, args.image_tag)
         commit_changes(args.gitlab_url, args.gitlab_api_token, args.project_id,
             args.deployment_configuration, args.branch, content)
+    except VersionUnchangedException as e:
+        print(e)
     except VersionerError as e:
         print("caught enexpected error: {}".format(e), file=sys.stderr)
         sys.exit(1)
