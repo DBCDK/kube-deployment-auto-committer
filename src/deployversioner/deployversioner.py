@@ -81,6 +81,8 @@ def setup_args() -> argparse.Namespace:
     parser.add_argument("image_tag", metavar="image-tag",
         help="new tag to commit into the deployment configuration")
     parser.add_argument("--gitlab-url", default="https://gitlab.dbc.dk")
+    parser.add_argument("-n", "--dry-run", action="store_true",
+        help="don't commit changes, print them to stdout")
     args = parser.parse_args()
     return args
 
@@ -88,8 +90,11 @@ def main():
     args = setup_args()
     try:
         content = set_image_tag(args.deployment_configuration, args.image_tag)
-        commit_changes(args.gitlab_url, args.gitlab_api_token, args.project_id,
-            args.deployment_configuration, args.branch, content)
+        if args.dry_run:
+            print(content)
+        else:
+            commit_changes(args.gitlab_url, args.gitlab_api_token, args.project_id,
+                args.deployment_configuration, args.branch, content)
     except VersionUnchangedException as e:
         print(e)
     except VersionerError as e:
