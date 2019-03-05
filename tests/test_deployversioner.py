@@ -16,17 +16,29 @@ import yaml
 import deployversioner.deployversioner
 
 class VerionerTest(unittest.TestCase):
-    def test_set_image_tag(self):
+    @unittest.mock.patch("urllib.request.urlopen")
+    def test_set_image_tag(self, mock_urlopen):
         configuration_path = os.path.join(get_tests_path(), "deployment.yml")
-        result = deployversioner.deployversioner.set_image_tag(configuration_path, "new_image_tag")
+        with open(configuration_path) as fp:
+            mock_urlopen.return_value = io.BytesIO(fp.read().encode("utf8"))
+            gitlab_request = deployversioner.deployversioner.GitlabRequest(
+                "gitlab.url", "token", 103, "staging")
+            result = deployversioner.deployversioner.set_image_tag(
+                gitlab_request, "filename", "new_image_tag")
+            docs = [d for d in yaml.load_all(result)]
+            self.assertEqual(docs, deployment_object)
 
-        docs = [d for d in yaml.load_all(result)]
-        self.assertEqual(docs, deployment_object)
-
-    def test_set_image_tag_identical_new_tag(self):
+    @unittest.mock.patch("urllib.request.urlopen")
+    def test_set_image_tag_identical_new_tag(self, mock_urlopen):
         configuration_path = os.path.join(get_tests_path(), "deployment.yml")
-        with self.assertRaises(deployversioner.deployversioner.VersionUnchangedException):
-            deployversioner.deployversioner.set_image_tag(configuration_path, "master-9")
+        with open(configuration_path) as fp:
+            mock_urlopen.return_value = io.BytesIO(fp.read().encode("utf8"))
+            gitlab_request = deployversioner.deployversioner.GitlabRequest(
+                "gitlab.url", "token", 103, "staging")
+            with self.assertRaises(deployversioner.deployversioner
+                    .VersionUnchangedException):
+                deployversioner.deployversioner.set_image_tag(
+                    gitlab_request, "filename", "master-9")
 
     def test_parse_image(self):
         image = "docker-io.dbc.dk/author-name-suggester-service:master-9"
@@ -38,8 +50,10 @@ class VerionerTest(unittest.TestCase):
     def test_commit_changes(self, request_urlopen):
         request_urlopen.return_value = io.BytesIO(json.dumps(
             {"file_path":"app/file.ext", "branch":"staging"}).encode("utf8"))
+        gitlab_request = deployversioner.deployversioner.GitlabRequest(
+            "gitlab.url", "token", 103, "staging")
         response = deployversioner.deployversioner.commit_changes(
-            "gitlab.url", "token", 103, "app/file.ext", "staging", "cont")
+            gitlab_request, "app/file.ext", "cont")
         self.assertEqual(json.loads(response),
             json.loads('{"file_path": "app/file.ext", "branch": "staging"}'))
         request = request_urlopen.call_args[0][0]
@@ -48,6 +62,21 @@ class VerionerTest(unittest.TestCase):
             "content": "cont", "commit_message": "updating image tag in app/file.ext"})
         self.assertEqual(request.headers, {'Private-token': 'token',
             'Content-type': 'application/json'})
+
+    @unittest.mock.patch("urllib.request.urlopen")
+    def test_get_file_contents(self, mock_urlopen):
+        mock_urlopen.return_value = io.BytesIO("file contents".encode("utf8"))
+        gitlab_request = deployversioner.deployversioner.GitlabRequest(
+            "gitlab.url", "token", 103, "staging")
+        response = deployversioner.deployversioner.get_file_contents(
+            gitlab_request, "filename")
+        self.assertEqual(response, "file contents")
+        request = mock_urlopen.call_args[0][0]
+        self.assertEqual(request.full_url,
+            "https://gitlab.url/api/v4/projects/103/repository/files/"
+            "filename/raw?ref=staging")
+        self.assertEqual(request.method, "GET")
+        self.assertEqual(request.headers, {"Private-token": "token"})
 
 def get_tests_path():
     try:
