@@ -38,8 +38,10 @@ class VerionerTest(unittest.TestCase):
     def test_commit_changes(self, request_urlopen):
         request_urlopen.return_value = io.BytesIO(json.dumps(
             {"file_path":"app/file.ext", "branch":"staging"}).encode("utf8"))
+        gitlab_request = deployversioner.deployversioner.GitlabRequest(
+            "gitlab.url", "token", 103, "staging")
         response = deployversioner.deployversioner.commit_changes(
-            "gitlab.url", "token", 103, "app/file.ext", "staging", "cont")
+            gitlab_request, "app/file.ext", "cont")
         self.assertEqual(json.loads(response),
             json.loads('{"file_path": "app/file.ext", "branch": "staging"}'))
         request = request_urlopen.call_args[0][0]

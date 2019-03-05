@@ -4,6 +4,7 @@
 # See license text in LICENSE.txt or at https://opensource.dbc.dk/licenses/gpl-3.0/
 
 import argparse
+import collections
 import json
 import sys
 import typing
@@ -12,6 +13,9 @@ import urllib.parse
 import urllib.request
 
 import yaml
+
+GitlabRequest = collections.namedtuple("GitlabRequest", ["url", "api_token",
+    "project_id", "branch"])
 
 class VersionerError(Exception):
     pass
@@ -49,16 +53,18 @@ def parse_image(image: str) -> typing.List[str]:
         raise VersionerError("invalid image format: {}".format(image))
     return parts
 
-def commit_changes(gitlab_url: str, gitlab_api_token: str, project_id: int, filename: str,
-        branch: str, content: str) -> str:
-    if gitlab_url[:4] != "http":
-        gitlab_url = "https://{}".format(gitlab_url)
-    headers = {"private-token": gitlab_api_token,
+def commit_changes(gitlab_request: GitlabRequest, filename: str,
+        content: str) -> str:
+    url = gitlab_request.url
+    if url[:4] != "http":
+        url = "https://{}".format(url)
+    headers = {"private-token": gitlab_request.api_token,
         "content-type": "application/json"}
     commit_message = "updating image tag in {}".format(filename)
-    data = {"branch": branch, "content": content, "commit_message": commit_message}
-    url = "{}/api/v4/projects/{}/repository/files/{}".format(gitlab_url,
-        project_id, urllib.parse.quote(filename, safe=""))
+    data = {"branch": gitlab_request.branch, "content": content,
+        "commit_message": commit_message}
+    url = "{}/api/v4/projects/{}/repository/files/{}".format(url,
+        gitlab_request.project_id, urllib.parse.quote(filename, safe=""))
     request = urllib.request.Request(url, headers=headers,
         data=json.dumps(data).encode("utf8"), method="PUT")
     try:
@@ -93,8 +99,10 @@ def main():
         if args.dry_run:
             print(content)
         else:
-            commit_changes(args.gitlab_url, args.gitlab_api_token, args.project_id,
-                args.deployment_configuration, args.branch, content)
+            gitlab_request = GitlabRequest(args.gitlab_url,
+                args.gitlab_api_token, args.project_id, args.branch)
+            commit_changes(gitlab_request, args.deployment_configuration,
+                content)
     except VersionUnchangedException as e:
         print(e)
     except VersionerError as e:
