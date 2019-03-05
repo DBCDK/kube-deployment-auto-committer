@@ -25,6 +25,21 @@ class VersionerError(Exception):
 class VersionUnchangedException(Exception):
     pass
 
+def get_file_contents(gitlab_request: GitlabRequest, filename: str) -> str:
+    url = gitlab_request.url
+    if url[:4] != "http":
+        url = "https://{}".format(url)
+    headers = {"private-token": gitlab_request.api_token}
+    url = "{}/api/v4/projects/{}/repository/files/{}/raw?ref={}".format(url,
+        gitlab_request.project_id, urllib.parse.quote(filename, safe=""), gitlab_request.branch)
+    request = urllib.request.Request(url, headers=headers, method="GET")
+    try:
+        page = urllib.request.urlopen(request)
+        return page.read().decode("utf8")
+    except urllib.error.URLError as e:
+        raise VersionerError("unable to get contents of {}: {}".format(
+            filename, e))
+
 def set_image_tag(configuration_path: str, new_image_tag: str) -> str:
     with open(configuration_path) as fp:
         docs = [d for d in yaml.load_all(fp)]

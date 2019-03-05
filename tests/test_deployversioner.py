@@ -51,6 +51,21 @@ class VerionerTest(unittest.TestCase):
         self.assertEqual(request.headers, {'Private-token': 'token',
             'Content-type': 'application/json'})
 
+    @unittest.mock.patch("urllib.request.urlopen")
+    def test_get_file_contents(self, mock_urlopen):
+        mock_urlopen.return_value = io.BytesIO("file contents".encode("utf8"))
+        gitlab_request = deployversioner.deployversioner.GitlabRequest(
+            "gitlab.url", "token", 103, "staging")
+        response = deployversioner.deployversioner.get_file_contents(
+            gitlab_request, "filename")
+        self.assertEqual(response, "file contents")
+        request = mock_urlopen.call_args[0][0]
+        self.assertEqual(request.full_url,
+            "https://gitlab.url/api/v4/projects/103/repository/files/"
+            "filename/raw?ref=staging")
+        self.assertEqual(request.method, "GET")
+        self.assertEqual(request.headers, {"Private-token": "token"})
+
 def get_tests_path():
     try:
         # get the parent directory of the directory this file is in
