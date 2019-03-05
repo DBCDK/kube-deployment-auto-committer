@@ -40,27 +40,28 @@ def get_file_contents(gitlab_request: GitlabRequest, filename: str) -> str:
         raise VersionerError("unable to get contents of {}: {}".format(
             filename, e))
 
-def set_image_tag(configuration_path: str, new_image_tag: str) -> str:
-    with open(configuration_path) as fp:
-        docs = [d for d in yaml.load_all(fp)]
-        for doc in docs:
-            if "kind" in doc and doc["kind"] == "Deployment":
-                try:
-                    containers = doc["spec"]["template"]["spec"]["containers"]
-                    if len(containers) > 1:
-                        raise VersionerError(
-                            "too many container templates in the deployment")
-                    image = containers[0]["image"]
-                    imagename, image_tag = parse_image(image)
-                    if image_tag != new_image_tag:
-                        containers[0]["image"] = "{}:{}".format(imagename,
-                            new_image_tag)
-                    else:
-                        raise VersionUnchangedException(
-                            "new image tag matches old, nothing to do")
-                except IndexError as e:
-                    raise VersionerError(e)
-        return yaml.dump_all(docs)
+def set_image_tag(gitlab_request: GitlabRequest, filename: str,
+        new_image_tag: str) -> str:
+    file_contents = get_file_contents(gitlab_request, filename)
+    docs = [d for d in yaml.load_all(file_contents)]
+    for doc in docs:
+        if "kind" in doc and doc["kind"] == "Deployment":
+            try:
+                containers = doc["spec"]["template"]["spec"]["containers"]
+                if len(containers) > 1:
+                    raise VersionerError(
+                        "too many container templates in the deployment")
+                image = containers[0]["image"]
+                imagename, image_tag = parse_image(image)
+                if image_tag != new_image_tag:
+                    containers[0]["image"] = "{}:{}".format(imagename,
+                        new_image_tag)
+                else:
+                    raise VersionUnchangedException(
+                        "new image tag matches old, nothing to do")
+            except IndexError as e:
+                raise VersionerError(e)
+    return yaml.dump_all(docs)
 
 def parse_image(image: str) -> typing.List[str]:
     parts = image.split(":")
@@ -91,7 +92,8 @@ def commit_changes(gitlab_request: GitlabRequest, filename: str,
 def setup_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument("deployment_configuration",
-        metavar="deployment-configuration")
+        metavar="deployment-configuration",
+        help="filename of deployment configuration to change")
     parser.add_argument("gitlab_api_token", metavar="gitlab-api-token",
         help="private token for accessing the gitlab api")
     parser.add_argument("project_id", metavar="project-id",
@@ -110,12 +112,13 @@ def setup_args() -> argparse.Namespace:
 def main():
     args = setup_args()
     try:
-        content = set_image_tag(args.deployment_configuration, args.image_tag)
+        gitlab_request = GitlabRequest(args.gitlab_url,
+            args.gitlab_api_token, args.project_id, args.branch)
+        content = set_image_tag(gitlab_request,
+            args.deployment_configuration, args.image_tag)
         if args.dry_run:
             print(content)
         else:
-            gitlab_request = GitlabRequest(args.gitlab_url,
-                args.gitlab_api_token, args.project_id, args.branch)
             commit_changes(gitlab_request, args.deployment_configuration,
                 content)
     except VersionUnchangedException as e:

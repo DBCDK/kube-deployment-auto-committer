@@ -16,17 +16,29 @@ import yaml
 import deployversioner.deployversioner
 
 class VerionerTest(unittest.TestCase):
-    def test_set_image_tag(self):
+    @unittest.mock.patch("urllib.request.urlopen")
+    def test_set_image_tag(self, mock_urlopen):
         configuration_path = os.path.join(get_tests_path(), "deployment.yml")
-        result = deployversioner.deployversioner.set_image_tag(configuration_path, "new_image_tag")
+        with open(configuration_path) as fp:
+            mock_urlopen.return_value = io.BytesIO(fp.read().encode("utf8"))
+            gitlab_request = deployversioner.deployversioner.GitlabRequest(
+                "gitlab.url", "token", 103, "staging")
+            result = deployversioner.deployversioner.set_image_tag(
+                gitlab_request, "filename", "new_image_tag")
+            docs = [d for d in yaml.load_all(result)]
+            self.assertEqual(docs, deployment_object)
 
-        docs = [d for d in yaml.load_all(result)]
-        self.assertEqual(docs, deployment_object)
-
-    def test_set_image_tag_identical_new_tag(self):
+    @unittest.mock.patch("urllib.request.urlopen")
+    def test_set_image_tag_identical_new_tag(self, mock_urlopen):
         configuration_path = os.path.join(get_tests_path(), "deployment.yml")
-        with self.assertRaises(deployversioner.deployversioner.VersionUnchangedException):
-            deployversioner.deployversioner.set_image_tag(configuration_path, "master-9")
+        with open(configuration_path) as fp:
+            mock_urlopen.return_value = io.BytesIO(fp.read().encode("utf8"))
+            gitlab_request = deployversioner.deployversioner.GitlabRequest(
+                "gitlab.url", "token", 103, "staging")
+            with self.assertRaises(deployversioner.deployversioner
+                    .VersionUnchangedException):
+                deployversioner.deployversioner.set_image_tag(
+                    gitlab_request, "filename", "master-9")
 
     def test_parse_image(self):
         image = "docker-io.dbc.dk/author-name-suggester-service:master-9"
