@@ -25,6 +25,9 @@ class VersionerError(Exception):
 class VersionUnchangedException(Exception):
     pass
 
+class ProjectNotFoundExecption(Exception):
+    pass
+
 def get_file_contents(gitlab_request: GitlabRequest, filename: str) -> str:
     url = gitlab_request.url
     if url[:4] != "http":
@@ -39,6 +42,20 @@ def get_file_contents(gitlab_request: GitlabRequest, filename: str) -> str:
     except urllib.error.URLError as e:
         raise VersionerError("unable to get contents of {}: {}".format(
             filename, e))
+
+def get_project_number(gitlab_get_projects_url: str, project_name:str, token:str) -> int:
+    request = urllib.request.Request(gitlab_get_projects_url, method="GET", headers={"private-token": token} )
+    try:
+        page = urllib.request.urlopen(request)
+        for project in json.loads( page.read().decode("utf8") ):
+            if project["path_with_namespace"] == project_name:
+                return project["id"]
+        raise ProjectNotFoundExecption("Unable to fetch project {}".format(project_name))
+
+    except urllib.error.URLError as e:
+        raise VersionerError("unable to get contents of {}: {}".format(
+            gitlab_get_projects_url, e))
+
 
 def set_image_tag(gitlab_request: GitlabRequest, filename: str,
         new_image_tag: str) -> str:
@@ -96,10 +113,8 @@ def setup_args() -> argparse.Namespace:
         help="filename of deployment configuration to change")
     parser.add_argument("gitlab_api_token", metavar="gitlab-api-token",
         help="private token for accessing the gitlab api")
-    parser.add_argument("project_id", metavar="project-id",
-        help="id of gitlab project. can be found in the output of "
-        "gitlab.url/api/v4/projects [https://docs.gitlab.com/ee/api/"
-        "projects.html#list-all-projects]")
+    parser.add_argument("project_name", metavar="project-name",
+        help="Name of project (including team name)")
     parser.add_argument("-b", "--branch", default="staging")
     parser.add_argument("image_tag", metavar="image-tag",
         help="new tag to commit into the deployment configuration")
@@ -112,8 +127,11 @@ def setup_args() -> argparse.Namespace:
 def main():
     args = setup_args()
     try:
+
+        project_id = get_project_number("{}/api/v4/projects".format(args.gitlab_url), args.project_name, args.gitlab_api_token)
+
         gitlab_request = GitlabRequest(args.gitlab_url,
-            args.gitlab_api_token, args.project_id, args.branch)
+            args.gitlab_api_token, project_id, args.branch)
         content = set_image_tag(gitlab_request,
             args.deployment_configuration, args.image_tag)
         if args.dry_run:
