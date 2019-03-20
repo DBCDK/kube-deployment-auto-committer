@@ -25,9 +25,6 @@ class VersionerError(Exception):
 class VersionUnchangedException(Exception):
     pass
 
-class ProjectNotFoundExecption(Exception):
-    pass
-
 def get_file_contents(gitlab_request: GitlabRequest, filename: str) -> str:
     url = gitlab_request.url
     if url[:4] != "http":
@@ -44,17 +41,16 @@ def get_file_contents(gitlab_request: GitlabRequest, filename: str) -> str:
             filename, e))
 
 def get_project_number(gitlab_get_projects_url: str, project_name:str, token:str) -> int:
-    request = urllib.request.Request(gitlab_get_projects_url, method="GET", headers={"private-token": token} )
+    url = "{}/{}".format( gitlab_get_projects_url, urllib.parse.quote(project_name, safe='') )
+    request = urllib.request.Request( url ,
+                                      method="GET",
+                                      headers={"private-token": token} )
     try:
         page = urllib.request.urlopen(request)
-        for project in json.loads( page.read().decode("utf8") ):
-            if project["path_with_namespace"] == project_name:
-                return project["id"]
-        raise ProjectNotFoundExecption("Unable to fetch project {}".format(project_name))
+        return  json.loads( page.read().decode("utf8") )["id"]
 
     except urllib.error.URLError as e:
-        raise VersionerError("unable to get contents of {}: {}".format(
-            gitlab_get_projects_url, e))
+        raise VersionerError("unable to get contents of {}: {}".format( url, e))
 
 
 def set_image_tag(gitlab_request: GitlabRequest, filename: str,
@@ -114,7 +110,7 @@ def setup_args() -> argparse.Namespace:
     parser.add_argument("gitlab_api_token", metavar="gitlab-api-token",
         help="private token for accessing the gitlab api")
     parser.add_argument("project_name", metavar="project-name",
-        help="Name of project (including team name)")
+        help="Name of project (including team name), e.g., metascrum/rrflow-deploy")
     parser.add_argument("-b", "--branch", default="staging")
     parser.add_argument("image_tag", metavar="image-tag",
         help="new tag to commit into the deployment configuration")
