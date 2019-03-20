@@ -78,6 +78,20 @@ class VerionerTest(unittest.TestCase):
         self.assertEqual(request.method, "GET")
         self.assertEqual(request.headers, {"Private-token": "token"})
 
+    @unittest.mock.patch("urllib.request.urlopen")
+    def test_get_project_number(self, mock_urlopen):
+        mock_urlopen.return_value = io.BytesIO("file contents".encode("utf8"))
+        configuration_path = os.path.join(get_tests_path(), "git_project.json")
+        with open(configuration_path) as fp:
+            mock_urlopen.return_value = io.BytesIO(fp.read().encode("utf8"))
+            print (mock_urlopen.return_value)
+            self.assertEqual( 143,
+                              deployversioner.deployversioner
+                              .get_project_number( 'https://gitlab.dbc.dk/api/v4/projects',
+                                                  'metascrum/rrflow-deploy',
+                                                  'token') )
+
+
 def get_tests_path():
     try:
         # get the parent directory of the directory this file is in
