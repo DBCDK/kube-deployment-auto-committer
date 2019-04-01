@@ -110,7 +110,7 @@ def setup_args() -> argparse.Namespace:
     parser.add_argument("gitlab_api_token", metavar="gitlab-api-token",
         help="private token for accessing the gitlab api")
     parser.add_argument("project_name", metavar="project-name",
-        help="Name of project (including team name), e.g., metascrum/rrflow-deploy")
+        help="Name of project (including group hierarchy), e.g., metascrum/rrflow-deploy")
     parser.add_argument("-b", "--branch", default="staging")
     parser.add_argument("image_tag", metavar="image-tag",
         help="new tag to commit into the deployment configuration")
