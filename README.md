@@ -20,5 +20,7 @@ python3 -m unittest discover -s tests
 
 ### examples ###
 ```bash
-set-new-version app-deployment.yml $private_token $project_id master-9 -b staging
+# project name should be the same as the path of the gitlab url for the
+# project, e.g. ai/assisteret-katalogisering-deploy
+set-new-version app-deployment.yml $private_token $project_name master-9 -b staging
 ```

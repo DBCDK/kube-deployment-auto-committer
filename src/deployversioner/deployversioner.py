@@ -40,6 +40,19 @@ def get_file_contents(gitlab_request: GitlabRequest, filename: str) -> str:
         raise VersionerError("unable to get contents of {}: {}".format(
             filename, e))
 
+def get_project_number(gitlab_get_projects_url: str, project_name:str, token:str) -> int:
+    url = "{}/{}".format( gitlab_get_projects_url, urllib.parse.quote(project_name, safe='') )
+    request = urllib.request.Request( url ,
+                                      method="GET",
+                                      headers={"private-token": token} )
+    try:
+        page = urllib.request.urlopen(request)
+        return  json.loads( page.read().decode("utf8") )["id"]
+
+    except urllib.error.URLError as e:
+        raise VersionerError("unable to get contents of {}: {}".format( url, e))
+
+
 def set_image_tag(gitlab_request: GitlabRequest, filename: str,
         new_image_tag: str) -> str:
     file_contents = get_file_contents(gitlab_request, filename)
@@ -96,10 +109,8 @@ def setup_args() -> argparse.Namespace:
         help="filename of deployment configuration to change")
     parser.add_argument("gitlab_api_token", metavar="gitlab-api-token",
         help="private token for accessing the gitlab api")
-    parser.add_argument("project_id", metavar="project-id",
-        help="id of gitlab project. can be found in the output of "
-        "gitlab.url/api/v4/projects [https://docs.gitlab.com/ee/api/"
-        "projects.html#list-all-projects]")
+    parser.add_argument("project_name", metavar="project-name",
+        help="Name of project (including group hierarchy), e.g., metascrum/rrflow-deploy")
     parser.add_argument("-b", "--branch", default="staging")
     parser.add_argument("image_tag", metavar="image-tag",
         help="new tag to commit into the deployment configuration")
@@ -112,8 +123,11 @@ def setup_args() -> argparse.Namespace:
 def main():
     args = setup_args()
     try:
+
+        project_id = get_project_number("{}/api/v4/projects".format(args.gitlab_url), args.project_name, args.gitlab_api_token)
+
         gitlab_request = GitlabRequest(args.gitlab_url,
-            args.gitlab_api_token, args.project_id, args.branch)
+            args.gitlab_api_token, project_id, args.branch)
         content = set_image_tag(gitlab_request,
             args.deployment_configuration, args.image_tag)
         if args.dry_run:
