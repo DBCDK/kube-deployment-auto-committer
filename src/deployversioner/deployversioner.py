@@ -57,6 +57,7 @@ def set_image_tag(gitlab_request: GitlabRequest, filename: str,
         new_image_tag: str) -> str:
     file_contents = get_file_contents(gitlab_request, filename)
     docs = [d for d in yaml.safe_load_all(file_contents)]
+    changed=False
     for doc in docs:
         if "kind" in doc and doc["kind"] == "Deployment":
             try:
@@ -69,11 +70,13 @@ def set_image_tag(gitlab_request: GitlabRequest, filename: str,
                 if image_tag != new_image_tag:
                     containers[0]["image"] = "{}:{}".format(imagename,
                         new_image_tag)
-                else:
-                    raise VersionUnchangedException(
-                        "new image tag matches old, nothing to do")
+                    changed=True
+
             except IndexError as e:
                 raise VersionerError(e)
+    if not changed:
+        raise VersionUnchangedException(
+            "new image tag matches old, nothing to do")
     return yaml.dump_all(docs)
 
 def parse_image(image: str) -> typing.List[str]:
