@@ -87,26 +87,6 @@ def parse_image(image: str) -> typing.List[str]:
         raise VersionerError("invalid image format: {}".format(image))
     return parts
 
-def commit_changes(gitlab_request: GitlabRequest, filename: str,
-        content: str) -> str:
-    url = gitlab_request.url
-    if url[:4] != "http":
-        url = "https://{}".format(url)
-    headers = {"private-token": gitlab_request.api_token,
-        "content-type": "application/json"}
-    commit_message = "updating image tag in {}".format(filename)
-    data = {"branch": gitlab_request.branch, "content": content,
-        "commit_message": commit_message}
-    url = "{}/api/v4/projects/{}/repository/files/{}".format(url,
-        gitlab_request.project_id, urllib.parse.quote(filename, safe=""))
-    request = urllib.request.Request(url, headers=headers,
-        data=json.dumps(data).encode("utf8"), method="PUT")
-    try:
-        page = urllib.request.urlopen(request)
-        return page.read().decode("utf8")
-    except urllib.error.URLError as e:
-        raise VersionerError("unable to commit change: {}".format(e))
-
 
 def get_content(gitlab_request: GitlabRequest, file: typing.Dict, image_tag: str, dir: str) -> typing.Dict:
     if dir not in file['path'] or not file['type'] == 'blob' or (
@@ -123,7 +103,7 @@ def get_content(gitlab_request: GitlabRequest, file: typing.Dict, image_tag: str
     return commit_blob
 
 
-def change_image_tag_in_all_yaml_files_in_dir(gitlab_request: GitlabRequest, dir: str, image_tag: str):
+def change_image_tag(gitlab_request: GitlabRequest, file_object: str, image_tag: str):
     url = gitlab_request.url
     if url[:4] != "http":
         url = "https://{}".format(url)
@@ -134,16 +114,18 @@ def change_image_tag_in_all_yaml_files_in_dir(gitlab_request: GitlabRequest, dir
     request = urllib.request.Request(url, headers=headers, method="GET")
     try:
         page = urllib.request.urlopen(request)
-        p = page.read().decode("utf8")
+        file_tree = json.loads(page.read().decode("utf8"))
+        if not file_object=="" and file_object not in [n["path"] for n in file_tree]:
+            raise VersionerError("File or dir {} not found".format(file_object))
         proposed_commits = [proposed_commit for proposed_commit in
-                            [get_content(gitlab_request, n, image_tag, dir) for n in json.loads(p)]
+                            [get_content(gitlab_request, n, image_tag, file_object) for n in file_tree]
                             if proposed_commit is not None]
         return proposed_commits
     except urllib.error.URLError as e:
         raise VersionerError("unable to get contents of dir: {}: {}".format(
-            dir, e))
+            file_object, e))
 
-def commit_changes_in_multiple_files(gitlab_request: GitlabRequest, proposed_commits: dict, tag:str):
+def commit_changes(gitlab_request: GitlabRequest, proposed_commits: dict, tag:str):
     if len(proposed_commits)==0:
         raise VersionUnchangedException("no changes found.")
     commit_blob={"branch": gitlab_request.branch, "commit_message": "Bump docker tag to {}".format(tag), "actions":[]}
@@ -170,8 +152,8 @@ def setup_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument("deployment_configuration",
         metavar="deployment-configuration",
-        help="filename of deployment configuration to change. Or all .yaml and .yml files in <deployment-configuration> dir. "
-             "Add --dir to command to specify that this is a directory.")
+        help="filename or dir of deployment configuration to change. If a dir is specified, all .yaml and .yml files "
+             "in that dir recursively will be included.")
     parser.add_argument("gitlab_api_token", metavar="gitlab-api-token",
         help="private token for accessing the gitlab api")
     parser.add_argument("project_name", metavar="project-name",
@@ -182,8 +164,6 @@ def setup_args() -> argparse.Namespace:
     parser.add_argument("--gitlab-url", default="https://gitlab.dbc.dk")
     parser.add_argument("-n", "--dry-run", action="store_true",
         help="don't commit changes, print them to stdout")
-    parser.add_argument("--dir", action="store_true", default=False, help="Specify --dir to indicate that "
-                                                                          "<deployment_configuration> is a directory.")
     args = parser.parse_args()
     return args
 
@@ -196,23 +176,16 @@ def main():
         gitlab_request = GitlabRequest(args.gitlab_url,
             args.gitlab_api_token, project_id, args.branch)
 
-        if args.dir:
-            proposed_commits = change_image_tag_in_all_yaml_files_in_dir(gitlab_request, args.deployment_configuration,
-                                                                         args.image_tag)
-            if args.dry_run:
-                for proposed_commit in proposed_commits:
-                    print("\n\nFile: {}".format(proposed_commit['file_path']))
-                    print("=" * (len(proposed_commit['file_path']) + 6))
-                    print(proposed_commit['content'])
-            else:
-                commit_changes_in_multiple_files(gitlab_request, proposed_commits, args.image_tag)
+        proposed_commits = change_image_tag(gitlab_request, args.deployment_configuration, args.image_tag)
+
+        if args.dry_run:
+            for proposed_commit in proposed_commits:
+                print("\n\nFile: {}".format(proposed_commit['file_path']))
+                print("=" * (len(proposed_commit['file_path']) + 6))
+                print(proposed_commit['content'])
         else:
-            content = set_image_tag(gitlab_request,
-                                    args.deployment_configuration, args.image_tag)
-            if args.dry_run:
-                print(content)
-            else:
-                commit_changes(gitlab_request, args.deployment_configuration, content)
+            commit_changes(gitlab_request, proposed_commits, args.image_tag)
+
     except VersionUnchangedException as e:
         print(e)
     except VersionerError as e:
