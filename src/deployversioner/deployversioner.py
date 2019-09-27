@@ -143,9 +143,28 @@ def change_image_tag_in_all_yaml_files_in_dir(gitlab_request: GitlabRequest, dir
         raise VersionerError("unable to get contents of dir: {}: {}".format(
             dir, e))
 
-def commit_changes_in_multiple_files(gitlab_rquest: GitlabRequest, proposed_commits: dict):
-    # Todo: Make json blob here and do post to gitlab
-    return None
+def commit_changes_in_multiple_files(gitlab_request: GitlabRequest, proposed_commits: dict, tag:str):
+    if len(proposed_commits)==0:
+        raise VersionUnchangedException("no changes found.")
+    commit_blob={"branch": gitlab_request.branch, "commit_message": "Bump docker tag to {}".format(tag), "actions":[]}
+    for proposed_commit in proposed_commits:
+        commit_blob["actions"].append({"action": "update", "file_path": proposed_commit["file_path"], "content": proposed_commit["content"]})
+    url = gitlab_request.url
+    if url[:4] != "http":
+        url = "https://{}".format(url)
+    headers = {"private-token": gitlab_request.api_token, "Content-Type": "application/json"}
+    url = "{}/api/v4/projects/{}/repository/commits?ref={}".format(url,
+                                                                                gitlab_request.project_id,
+                                                                                gitlab_request.branch)
+    request = urllib.request.Request(url, headers=headers, method="POST", data=json.dumps(commit_blob).encode())
+    try:
+        page = urllib.request.urlopen(request)
+        p = page.read().decode("utf8")
+        if not json.loads(p)["status"]==None:
+            raise VersionerError("unable to do commit. Status from {} is {}".format(url, p))
+    except urllib.error.URLError as e:
+        raise VersionerError("unable to do commit to repository at: {}  with docker-tag:{}\n {}".format(
+            url, tag, e))
 
 def setup_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
@@ -186,7 +205,7 @@ def main():
                     print("=" * (len(proposed_commit['file_path']) + 6))
                     print(proposed_commit['content'])
             else:
-                commit_changes_in_multiple_files(gitlab_request, proposed_commits)
+                commit_changes_in_multiple_files(gitlab_request, proposed_commits, args.image_tag)
         else:
             content = set_image_tag(gitlab_request,
                                     args.deployment_configuration, args.image_tag)
@@ -197,5 +216,5 @@ def main():
     except VersionUnchangedException as e:
         print(e)
     except VersionerError as e:
-        print("caught enexpected error: {}".format(e), file=sys.stderr)
+        print("caught unexpected error: {}".format(e), file=sys.stderr)
         sys.exit(1)
