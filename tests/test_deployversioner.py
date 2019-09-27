@@ -36,8 +36,19 @@ class VerionerTest(unittest.TestCase):
             gitlab_request = deployversioner.deployversioner.GitlabRequest(
                 "gitlab.url", "token", 103, "staging")
             result = deployversioner.deployversioner.set_image_tag(
-                gitlab_request, "filename", "TAG-1")
-            self.assertEqual(result.count("TAG-1"), 4)
+                gitlab_request, "filename", "TAG-2")
+            self.assertEqual(result.count("TAG-2"), 4)
+
+    @unittest.mock.patch("urllib.request.urlopen")
+    def test_multiple_yaml_files(self, mock_urlopen):
+        configuration_path = os.path.join(get_tests_path(), "deployment2.yml")
+        with open(configuration_path) as fp:
+            mock_urlopen.return_value = io.BytesIO(fp.read().encode("utf8"))
+            gitlab_request = deployversioner.deployversioner.GitlabRequest(
+                "gitlab.url", "token", 103, "staging")
+            result = deployversioner.deployversioner.set_image_tag(
+                gitlab_request, "filename", "TAG-2")
+            self.assertEqual(result.count("TAG-2"), 4)
 
     @unittest.mock.patch("urllib.request.urlopen")
     def test_set_image_tag_identical_new_tag(self, mock_urlopen):
