@@ -25,6 +25,8 @@ class VersionerError(Exception):
 class VersionUnchangedException(Exception):
     pass
 
+class VersionerFileNotFound(VersionerError):
+    pass
 
 def get_file_contents(gitlab_request: GitlabRequest, filename: str) -> str:
     url = gitlab_request.url
@@ -91,7 +93,7 @@ def parse_image(image: str) -> typing.List[str]:
 def get_content(gitlab_request: GitlabRequest, file: typing.Dict, image_tag: str, dir: str) -> typing.Dict:
     if dir not in file['path'] or not file['type'] == 'blob' or (
             not file['path'].endswith('.yml') and not file['path'].endswith('.yaml')):
-        return None
+        return {}
 
     commit_blob = {}
     try:
@@ -99,7 +101,7 @@ def get_content(gitlab_request: GitlabRequest, file: typing.Dict, image_tag: str
         commit_blob['action'] = 'update'
         commit_blob['file_path'] = file['path']
     except VersionUnchangedException as e:
-        return None
+        return {}
     return commit_blob
 
 
@@ -116,10 +118,10 @@ def change_image_tag(gitlab_request: GitlabRequest, file_object: str, image_tag:
         page = urllib.request.urlopen(request)
         file_tree = json.loads(page.read().decode("utf8"))
         if not file_object=="" and file_object not in [n["path"] for n in file_tree]:
-            raise VersionerError("File or dir {} not found".format(file_object))
+            raise VersionerFileNotFound("File or dir {} not found".format(file_object))
         proposed_commits = [proposed_commit for proposed_commit in
                             [get_content(gitlab_request, n, image_tag, file_object) for n in file_tree]
-                            if proposed_commit is not None]
+                            if not proposed_commit=={}]
         return proposed_commits
     except urllib.error.URLError as e:
         raise VersionerError("unable to get contents of dir: {}: {}".format(
