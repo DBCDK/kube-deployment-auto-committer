@@ -15,7 +15,7 @@ import yaml
 import deployversioner.deployversioner
 
 @unittest.mock.patch("urllib.request.urlopen")
-class VerionerTest(unittest.TestCase):
+class VerionerTests(unittest.TestCase):
 
     def test_set_image_tag(self, mock_urlopen):
         mock_urlopen.side_effect=get_url_open_response_return_value
