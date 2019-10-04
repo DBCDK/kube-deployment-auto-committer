@@ -134,7 +134,7 @@ def get_url_open_response_return_value(request):
 ########################################################
 
 url_open_response_return_values = {
-    "https://gitlab.url/api/v4/projects/103/repository/tree/?ref=staging&recursive=True": """[
+    "https://gitlab.url/api/v4/projects/103/repository/tree/?ref=staging&recursive=True&per_page=5000": """[
           {
             "id": "5ab350dcf92bf662b2b309b4db83415afc2d6baa",
             "name": "services",
