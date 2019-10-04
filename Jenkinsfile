@@ -3,7 +3,13 @@
 def workerNode = "devel9"
 
 pipeline {
-	agent {label workerNode}
+	agent {
+		docker {
+			label workerNode
+			image "docker.dbc.dk/build-env"
+			alwaysPull true
+		}
+	}
 	environment {
 		ARTIFACTORY_LOGIN = credentials("artifactory_login")
 	}
@@ -11,14 +17,20 @@ pipeline {
 		pollSCM("H/02 * * * *")
 	}
 	stages {
-		stage("upload wheel package") {
-			agent {
-				docker {
-					label workerNode
-					image "docker.dbc.dk/build-env"
-					alwaysPull true
-				}
+		stage("test") {
+			steps {
+				sh """#!/usr/bin/env bash
+					set -xe
+					rm -rf ENV
+					python3 -m venv ENV
+					source ENV/bin/activate
+					pip install -U pip
+					pip install .
+					python3 -m unittest discover -s tests
+				"""
 			}
+		}
+		stage("upload wheel package") {
 			when {
 				branch "master"
 			}
