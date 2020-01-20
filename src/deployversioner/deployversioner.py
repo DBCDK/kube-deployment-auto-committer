@@ -110,9 +110,8 @@ def change_image_tag(gitlab_request: GitlabRequest, file_object: str, image_tag:
     if url[:4] != "http":
         url = "https://{}".format(url)
     headers = {"private-token": gitlab_request.api_token}
-    url = "{}/api/v4/projects/{}/repository/tree/?ref={}&recursive=True&per_page=5000".format(url,
-                                                                                gitlab_request.project_id,
-                                                                                gitlab_request.branch)
+    path = "/".join(file_object.split("/")[:-1])
+    url = f"{url}/api/v4/projects/{gitlab_request.project_id}/repository/tree/?ref={gitlab_request.branch}&recursive=True&per_page=5000&path={path}"
     request = urllib.request.Request(url, headers=headers, method="GET")
     try:
         page = urllib.request.urlopen(request)
