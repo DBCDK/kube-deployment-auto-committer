@@ -38,19 +38,59 @@ class VerionerTests(unittest.TestCase):
         self.assertEqual(result.count("TAG-2"), 2)
 
     def test_multiple_yaml_files(self, mock_urlopen):
-        mock_urlopen.side_effect=get_url_open_response_return_value
+        repo_tree_response = json.dumps([
+            {
+                "id": "5ab350dcf92bf662b2b309b4db83415afc2d6baa",
+                "name": "files",
+                "type": "tree",
+                "path": "files",
+                "mode": "040000"
+            },
+            {
+                "id": "a240c0e70890a799d51a8aee556808d98e689a36",
+                "name": "file1.yml",
+                "type": "blob",
+                "path": "files/file1.yml",
+                "mode": "100644"
+            },
+            {
+                "id": "589ed823e9a84c56feb95ac58e7cf384626b9cbf4",
+                "name": "file2.yml",
+                "type": "blob",
+                "path": "files/file2.yml",
+                "mode": "100644"
+            }]
+        )
+        file_content_responses = ["""apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: service1
+spec:
+  template:
+    spec:
+      containers:
+      - image: docker-image:master-01
+""", """apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: service2
+spec:
+  template:
+    spec:
+      containers:
+      - image: docker-image:master-01
+"""]
+        mock_urlopen.side_effect = [
+            io.BytesIO(repo_tree_response.encode("utf8")),
+            io.BytesIO(file_content_responses[0].encode("utf8")),
+            io.BytesIO(file_content_responses[1].encode("utf8"))
+        ]
         gitlab_request = deployversioner.deployversioner.GitlabRequest(
             "gitlab.url", "token", 103, "staging")
         result = deployversioner.deployversioner.change_image_tag(
-            gitlab_request, "services", "TAG-2")
-        tag_occurences=0
-        for content in result:
-            docs = [d for d in yaml.safe_load_all(content['content'])]
-            for doc in docs:
-                if doc['kind']=="Deployment":
-                    self.assertTrue(doc['spec']['template']['spec']['containers'][0]['image'].endswith(":TAG-2"), msg="Found TAG-2 tag")
-                    tag_occurences=+1
-        self.assertTrue(tag_occurences, 4)
+            gitlab_request, "files", "master-02")
+        self.assertEqual(len(result), 2)
+        self.assertEqual(mock_urlopen.call_count, 3)
 
     def test_set_image_tag_identical_new_tag(self, mock_urlopen):
         mock_urlopen.side_effect = get_url_open_response_return_value
@@ -68,11 +108,62 @@ class VerionerTests(unittest.TestCase):
         self.assertEqual(image_tag, "master-9")
 
     def test_commit_changes(self, mock_urlopen):
-        mock_urlopen.side_effect = get_url_open_response_return_value
+        repo_tree_response = json.dumps([
+            {
+                "id": "5ab350dcf92bf662b2b309b4db83415afc2d6baa",
+                "name": "files",
+                "type": "tree",
+                "path": "files",
+                "mode": "040000"
+            },
+            {
+                "id": "a240c0e70890a799d51a8aee556808d98e689a36",
+                "name": "file1.yml",
+                "type": "blob",
+                "path": "files/file1.yml",
+                "mode": "100644"
+            }]
+        )
+        file_content_response = """apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: service
+spec:
+  template:
+    spec:
+      containers:
+      - image: docker-image:master-01
+"""
+        commit_response = json.dumps({
+            "id": "82b15418fdd0048a8aba1d61e7f5d81db312bdda",
+            "short_id": "82b15418",
+            "created_at": "2019-10-01T10:47:36.000+02:00",
+            "parent_ids": ["e043759502dd3dd08b48ff53a4226e20ba8efeaa"],
+            "title": "Bump docker tag to TAG-2",
+            "message": "Bump docker tag to TAG-2",
+            "author_name": "Author",
+            "author_email": "author@dbc.dk",
+            "authored_date": "2019-10-01T10:47:36.000+02:00",
+            "committer_name": "Committer",
+            "committer_email": "commiter@dbc.dk",
+            "committed_date": "2019-10-01T10:47:36.000+02:00",
+            "stats": {
+                "additions": 4,
+                "deletions": 4,
+                "total": 8
+            },
+            "status": None,
+            "last_pipeline": None,
+            "project_id": 103
+        })
+        mock_urlopen.side_effect = [
+            io.BytesIO(repo_tree_response.encode("utf8")),
+            io.BytesIO(file_content_response.encode("utf8")),
+            io.BytesIO(commit_response.encode("utf8"))]
         gitlab_request = deployversioner.deployversioner.GitlabRequest(
             "gitlab.url", "token", 103, "staging")
         proposed_commits = deployversioner.deployversioner.change_image_tag(
-            gitlab_request, "services", "TAG-2")
+            gitlab_request, "files", "TAG-2")
         deployversioner.deployversioner.commit_changes(
             gitlab_request, proposed_commits, "TAG-2")
         request = mock_urlopen.call_args[0][0]
@@ -100,7 +191,23 @@ class VerionerTests(unittest.TestCase):
         self.assertEqual(request.headers, {"Private-token": "token"})
 
     def test_file_does_not_exist(self, mock_urlopen):
-        mock_urlopen.side_effect = get_url_open_response_return_value
+        repo_tree_response = json.dumps([
+            {
+                "id": "5ab350dcf92bf662b2b309b4db83415afc2d6baa",
+                "name": "files",
+                "type": "tree",
+                "path": "files",
+                "mode": "040000"
+            },
+            {
+                "id": "a240c0e70890a799d51a8aee556808d98e689a36",
+                "name": "file1.yml",
+                "type": "blob",
+                "path": "files/file1.yml",
+                "mode": "100644"
+            }]
+        )
+        mock_urlopen.return_value = io.BytesIO(repo_tree_response.encode("utf8"))
         gitlab_request = deployversioner.deployversioner.GitlabRequest(
             "gitlab.url", "token", 103, "staging")
         with self.assertRaises(deployversioner.deployversioner
