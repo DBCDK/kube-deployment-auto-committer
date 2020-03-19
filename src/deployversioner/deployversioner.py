@@ -56,6 +56,15 @@ def get_project_number(gitlab_get_projects_url: str, project_name:str, token:str
     except urllib.error.URLError as e:
         raise VersionerError("unable to get contents of {}: {}".format( url, e))
 
+existing_image_tags: set = set()
+
+def add_to_existing_image_tags(image_tag: str):
+    existing_image_tags.add(image_tag)
+
+def format_commit_message(tag:str):
+    lines = ["Bump docker tag from {} to {}".format(existing_image_tag, tag) for existing_image_tag in existing_image_tags]
+    return "\n".join(lines)
+
 
 def set_image_tag(gitlab_request: GitlabRequest, filename: str,
         new_image_tag: str) -> str:
@@ -72,6 +81,7 @@ def set_image_tag(gitlab_request: GitlabRequest, filename: str,
                 image = containers[0]["image"]
                 imagename, image_tag = parse_image(image)
                 if image_tag != new_image_tag:
+                    add_to_existing_image_tags(image_tag)
                     containers[0]["image"] = "{}:{}".format(imagename,
                         new_image_tag)
                     changed=True
@@ -129,7 +139,7 @@ def change_image_tag(gitlab_request: GitlabRequest, file_object: str, image_tag:
 def commit_changes(gitlab_request: GitlabRequest, proposed_commits: dict, tag:str):
     if len(proposed_commits)==0:
         raise VersionUnchangedException("no changes found.")
-    commit_blob={"branch": gitlab_request.branch, "commit_message": "Bump docker tag to {}".format(tag), "actions":[]}
+    commit_blob={"branch": gitlab_request.branch, "commit_message": format_commit_message(tag), "actions":[]}
     for proposed_commit in proposed_commits:
         commit_blob["actions"].append({"action": "update", "file_path": proposed_commit["file_path"], "content": proposed_commit["content"]})
     url = gitlab_request.url
