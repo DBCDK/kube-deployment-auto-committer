@@ -39,17 +39,86 @@ class VerionerTests(unittest.TestCase):
 
     def test_that_change_image_tag_makes_a_commit_message_covering_all_bumped_tags(self, mock_urlopen):
         deployversioner.deployversioner.existing_image_tags.clear()
-        mock_urlopen.side_effect = get_url_open_response_return_value
+        repo_tree_response = json.dumps([
+            {
+                "id": "5ab350dcf92bf662b2b309b4db83415afc2d6baa",
+                "name": "files",
+                "type": "tree",
+                "path": "files",
+                "mode": "040000"
+            },
+            {
+                "id": "a240c0e70890a799d51a8aee556808d98e689a36",
+                "name": "file1.yml",
+                "type": "blob",
+                "path": "files/file1.yml",
+                "mode": "100644"
+            },
+            {
+                "id": "589ed823e9a84c56feb95ac58e7cf384626b9cbf4",
+                "name": "file2.yml",
+                "type": "blob",
+                "path": "files/file2.yml",
+                "mode": "100644"
+            }]
+        )
+        file_content_responses = ["""apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: service1
+spec:
+  template:
+    spec:
+      containers:
+      - image: docker-image:master-01
+""", """apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: service2
+spec:
+  template:
+    spec:
+      containers:
+      - image: docker-image:master-02
+        """]
+        commit_response = json.dumps({
+            "id": "82b15418fdd0048a8aba1d61e7f5d81db312bdda",
+            "short_id": "82b15418",
+            "created_at": "2019-10-01T10:47:36.000+02:00",
+            "parent_ids": ["e043759502dd3dd08b48ff53a4226e20ba8efeaa"],
+            "title": "Bump docker tag from master-01 to TAG-2",
+            "message": "Bump docker tag from master-01 to TAG-2\nBump docker tag from master-02 to TAG-2",
+            "author_name": "Author",
+            "author_email": "author@dbc.dk",
+            "authored_date": "2019-10-01T10:47:36.000+02:00",
+            "committer_name": "Committer",
+            "committer_email": "commiter@dbc.dk",
+            "committed_date": "2019-10-01T10:47:36.000+02:00",
+            "stats": {
+                "additions": 4,
+                "deletions": 4,
+                "total": 8
+            },
+            "status": None,
+            "last_pipeline": None,
+            "project_id": 103
+        })
+        mock_urlopen.side_effect = [
+            io.BytesIO(repo_tree_response.encode("utf8")),
+            io.BytesIO(file_content_responses[0].encode("utf8")),
+            io.BytesIO(file_content_responses[1].encode("utf8")),
+            io.BytesIO(commit_response.encode("utf8"))
+        ]
         gitlab_request = deployversioner.deployversioner.GitlabRequest(
             "gitlab.url", "token", 103, "staging")
         proposed_commits = deployversioner.deployversioner.change_image_tag(
-            gitlab_request, "services", "TAG-2")
+            gitlab_request, "files", "TAG-2")
         deployversioner.deployversioner.commit_changes(
             gitlab_request, proposed_commits, "TAG-2")
         request = mock_urlopen.call_args[0][0]
         commit_message=json.loads(request.data)["commit_message"]
-        self.assertIn('Bump docker tag from master-27 to TAG-2', commit_message)
-        self.assertIn('Bump docker tag from master-28 to TAG-2', commit_message)
+        self.assertIn('Bump docker tag from master-01 to TAG-2', commit_message)
+        self.assertIn('Bump docker tag from master-02 to TAG-2', commit_message)
 
     def test_multiple_yaml_files(self, mock_urlopen):
         repo_tree_response = json.dumps([
@@ -707,56 +776,5 @@ spec:
   },
   "approvals_before_merge": 0,
   "mirror": false
-}""",
-    "https://gitlab.url/api/v4/projects/103/repository/tree/?ref=staging&recursive=True&per_page=5000&path=": """[
-      {
-        "id": "5ab350dcf92bf662b2b309b4db83415afc2d6baa",
-        "name": "services",
-        "type": "tree",
-        "path": "services",
-        "mode": "040000"
-      },
-      {
-        "id": "5cc225ac3057da5c4b958e600b9a60a754c8e9da",
-        "name": "README.md",
-        "type": "blob",
-        "path": "README.md",
-        "mode": "100644"
-      },
-      {
-        "id": "bcd9a9d1d8364a323486c8388cd59287b5cd8ef4",
-        "name": "gui.yaml",
-        "type": "blob",
-        "path": "gui.yaml",
-        "mode": "100644"
-      },
-      {
-        "id": "7ed8ec6c836f68434570302bbd92bfa7b71faf46",
-        "name": "p.valid",
-        "type": "blob",
-        "path": "p.valid",
-        "mode": "100644"
-      },
-      {
-        "id": "3c8c72f32e71b0f63103adfae6519a38bcb518ec",
-        "name": "batch-exchange-sink.yml",
-        "type": "blob",
-        "path": "services/batch-exchange-sink.yml",
-        "mode": "100644"
-      },
-      {
-        "id": "8debbafc24584d1da20010c1667bf20568f3add1",
-        "name": "diff-sink.yml",
-        "type": "blob",
-        "path": "services/diff-sink.yml",
-        "mode": "100644"
-      },
-      {
-        "id": "a240c0e70890a799d51a8aee556808d98e689a36",
-        "name": "dummy-sink.yml",
-        "type": "blob",
-        "path": "services/dummy-sink.yml",
-        "mode": "100644"
-      }
-    ]"""
+}"""
 }
