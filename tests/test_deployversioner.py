@@ -2,6 +2,7 @@
 
 # Copyright Dansk Bibliotekscenter a/s. Licensed under GPLv3
 # See license text in LICENSE.txt or at https://opensource.dbc.dk/licenses/gpl-3.0/
+import typing
 
 import io
 import json
@@ -21,7 +22,7 @@ class VerionerTests(unittest.TestCase):
         mock_urlopen.side_effect=get_url_open_response_return_value
         gitlab_request = deployversioner.deployversioner.GitlabRequest(
             "gitlab.url", "token", 103, "staging")
-        result = deployversioner.deployversioner.set_image_tag(
+        result, _ = deployversioner.deployversioner.set_image_tag(
             gitlab_request, "gui.yaml", "new_image_tag")
         docs = [d for d in yaml.safe_load_all(result)]
         configuration_path = os.path.join(get_tests_path(), "gui.yaml")
@@ -33,12 +34,11 @@ class VerionerTests(unittest.TestCase):
         mock_urlopen.side_effect = get_url_open_response_return_value
         gitlab_request = deployversioner.deployversioner.GitlabRequest(
             "gitlab.url", "token", 103, "staging")
-        result = deployversioner.deployversioner.set_image_tag(
+        result,_ = deployversioner.deployversioner.set_image_tag(
             gitlab_request, "services/batch-exchange-sink.yml", "TAG-2")
         self.assertEqual(result.count("TAG-2"), 2)
 
     def test_that_change_image_tag_makes_a_commit_message_covering_all_bumped_tags(self, mock_urlopen):
-        deployversioner.deployversioner.existing_image_tags.clear()
         repo_tree_response = json.dumps([
             {
                 "id": "5ab350dcf92bf662b2b309b4db83415afc2d6baa",
@@ -95,10 +95,10 @@ spec:
         ]
         gitlab_request = deployversioner.deployversioner.GitlabRequest(
             "gitlab.url", "token", 103, "staging")
-        proposed_commits = deployversioner.deployversioner.change_image_tag(
+        proposed_commits, changed_image_tags = deployversioner.deployversioner.change_image_tag(
             gitlab_request, "files", "TAG-2")
         deployversioner.deployversioner.commit_changes(
-            gitlab_request, proposed_commits, "TAG-2")
+            gitlab_request, proposed_commits, "TAG-2", changed_image_tags)
         request = mock_urlopen.call_args[0][0]
         commit_message=json.loads(request.data)["commit_message"]
         self.assertIn('Bump docker tag from master-01 to TAG-2', commit_message)
@@ -203,17 +203,16 @@ spec:
             "status": None,
             "project_id": 103
         })
-        deployversioner.deployversioner.existing_image_tags.clear()
         mock_urlopen.side_effect = [
             io.BytesIO(repo_tree_response.encode("utf8")),
             io.BytesIO(file_content_response.encode("utf8")),
             io.BytesIO(commit_response.encode("utf8"))]
         gitlab_request = deployversioner.deployversioner.GitlabRequest(
             "gitlab.url", "token", 103, "staging")
-        proposed_commits = deployversioner.deployversioner.change_image_tag(
+        proposed_commits, changed_tags = deployversioner.deployversioner.change_image_tag(
             gitlab_request, "files", "TAG-2")
         deployversioner.deployversioner.commit_changes(
-            gitlab_request, proposed_commits, "TAG-2")
+            gitlab_request, proposed_commits, "TAG-2", changed_tags)
         request = mock_urlopen.call_args[0][0]
         data=json.loads(request.data)
 
