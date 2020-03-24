@@ -136,7 +136,7 @@ def change_image_tag(gitlab_request: GitlabRequest, file_object: str, image_tag:
 def format_commit_message(tag: str, changed_image_tags: typing.Set[str]):
     lines = ["Bump docker tag from {} to {}".format(existing_image_tag, tag) for existing_image_tag in
             changed_image_tags]
-    return "\n".join(lines)
+    return "Bump docker tag to {}\n\n{}".format(tag, "\n".join(lines))
 
 def commit_changes(gitlab_request: GitlabRequest, proposed_commits: dict, tag:str, changed_image_tags: typing.Set[str]):
     if len(proposed_commits)==0:

@@ -221,7 +221,7 @@ spec:
                          ["services/dummy-sink.yml", "services/batch-exchange-sink.yml", "services/diff-sink.yml"].sort())
         self.assertEqual(set([d['action'] for d in data["actions"]]), {"update"})
         self.assertEqual(data["branch"], "staging")
-        self.assertEqual(data["commit_message"], "Bump docker tag from master-01 to TAG-2")
+        self.assertEqual(data["commit_message"], "Bump docker tag to TAG-2\n\nBump docker tag from master-01 to TAG-2")
         self.assertEqual(request.headers, {'Private-token': 'token',
             'Content-type': 'application/json'})
 
