@@ -58,10 +58,11 @@ def get_project_number(gitlab_get_projects_url: str, project_name:str, token:str
 
 
 def set_image_tag(gitlab_request: GitlabRequest, filename: str,
-        new_image_tag: str) -> str:
+        new_image_tag: str) -> typing.Tuple[typing.Any, set]:
     file_contents = get_file_contents(gitlab_request, filename)
     docs = [d for d in yaml.safe_load_all(file_contents)]
     changed=False
+    changed_image_tags = set()
     for doc in docs:
         if "kind" in doc and doc["kind"] == "Deployment":
             try:
@@ -72,6 +73,7 @@ def set_image_tag(gitlab_request: GitlabRequest, filename: str,
                 image = containers[0]["image"]
                 imagename, image_tag = parse_image(image)
                 if image_tag != new_image_tag:
+                    changed_image_tags.add(image_tag)
                     containers[0]["image"] = "{}:{}".format(imagename,
                         new_image_tag)
                     changed=True
@@ -81,7 +83,7 @@ def set_image_tag(gitlab_request: GitlabRequest, filename: str,
     if not changed:
         raise VersionUnchangedException(
             "new image tag matches old, nothing to do")
-    return yaml.dump_all(docs)
+    return yaml.dump_all(docs), changed_image_tags
 
 def parse_image(image: str) -> typing.List[str]:
     parts = image.split(":")
@@ -93,19 +95,19 @@ def parse_image(image: str) -> typing.List[str]:
 def get_content(gitlab_request: GitlabRequest, file: typing.Dict, image_tag: str, dir: str) -> typing.Dict:
     if dir not in file['path'] or not file['type'] == 'blob' or (
             not file['path'].endswith('.yml') and not file['path'].endswith('.yaml')):
-        return {}
+        return {"commit_blob": {}, "changed_image_tags": set()}
 
     commit_blob = {}
     try:
-        commit_blob['content'] = set_image_tag(gitlab_request, file['path'], image_tag)
+        commit_blob['content'], changed_tags = set_image_tag(gitlab_request, file['path'], image_tag)
         commit_blob['action'] = 'update'
         commit_blob['file_path'] = file['path']
     except VersionUnchangedException as e:
-        return {}
-    return commit_blob
+        return {"commit_blob": {}, "changed_image_tags": set()}
+    return {"commit_blob": commit_blob, "changed_image_tags": changed_tags}
 
 
-def change_image_tag(gitlab_request: GitlabRequest, file_object: str, image_tag: str):
+def change_image_tag(gitlab_request: GitlabRequest, file_object: str, image_tag: str) -> typing.Tuple[typing.Any, set]:
     url = gitlab_request.url
     if url[:4] != "http":
         url = "https://{}".format(url)
@@ -118,18 +120,28 @@ def change_image_tag(gitlab_request: GitlabRequest, file_object: str, image_tag:
         file_tree = json.loads(page.read().decode("utf8"))
         if not file_object=="" and file_object not in [n["path"] for n in file_tree]:
             raise VersionerFileNotFound("File or dir {} not found".format(file_object))
-        proposed_commits = [proposed_commit for proposed_commit in
+        changes = [changes for changes in
                             [get_content(gitlab_request, n, image_tag, file_object) for n in file_tree]
-                            if not proposed_commit=={}]
-        return proposed_commits
+                            if not changes["commit_blob"]=={}]
+        proposed_commits = []
+        changed_image_tags: set = set()
+        for change in changes:
+            proposed_commits.append(change["commit_blob"])
+            changed_image_tags.update(change["changed_image_tags"])
+        return proposed_commits, changed_image_tags
     except urllib.error.URLError as e:
         raise VersionerError("unable to get contents of dir: {}: {}".format(
             file_object, e))
 
-def commit_changes(gitlab_request: GitlabRequest, proposed_commits: dict, tag:str):
+def format_commit_message(tag: str, changed_image_tags: typing.Set[str]):
+    lines = ["Bump docker tag from {} to {}".format(existing_image_tag, tag) for existing_image_tag in
+            changed_image_tags]
+    return "Bump docker tag to {}\n\n{}".format(tag, "\n".join(lines))
+
+def commit_changes(gitlab_request: GitlabRequest, proposed_commits: dict, tag:str, changed_image_tags: typing.Set[str]):
     if len(proposed_commits)==0:
         raise VersionUnchangedException("no changes found.")
-    commit_blob={"branch": gitlab_request.branch, "commit_message": "Bump docker tag to {}".format(tag), "actions":[]}
+    commit_blob={"branch": gitlab_request.branch, "commit_message": format_commit_message(tag, changed_image_tags), "actions":[]}
     for proposed_commit in proposed_commits:
         commit_blob["actions"].append({"action": "update", "file_path": proposed_commit["file_path"], "content": proposed_commit["content"]})
     url = gitlab_request.url
@@ -177,7 +189,7 @@ def main():
         gitlab_request = GitlabRequest(args.gitlab_url,
             args.gitlab_api_token, project_id, args.branch)
 
-        proposed_commits = change_image_tag(gitlab_request, args.deployment_configuration, args.image_tag)
+        proposed_commits, changed_image_tags = change_image_tag(gitlab_request, args.deployment_configuration, args.image_tag)
 
         if args.dry_run:
             for proposed_commit in proposed_commits:
@@ -185,7 +197,7 @@ def main():
                 print("=" * (len(proposed_commit['file_path']) + 6))
                 print(proposed_commit['content'])
         else:
-            commit_changes(gitlab_request, proposed_commits, args.image_tag)
+            commit_changes(gitlab_request, proposed_commits, args.image_tag, changed_image_tags)
 
     except VersionUnchangedException as e:
         print(e)
