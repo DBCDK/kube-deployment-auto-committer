@@ -64,7 +64,7 @@ def set_image_tag(gitlab_request: GitlabRequest, filename: str,
     changed=False
     changed_image_tags = set()
     for doc in docs:
-        if "kind" in doc and doc["kind"] == "Deployment":
+        if "kind" in doc and (doc["kind"] == "Deployment" or doc["kind"] == "StatefulSet"):
             try:
                 containers = doc["spec"]["template"]["spec"]["containers"]
                 if len(containers) > 1:
