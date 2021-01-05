@@ -1,0 +1,53 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels: {app: dataio-gui-service, app.dbc.dk/team: metascrum, app.kubernetes.io/component: service,
+    app.kubernetes.io/name: gui, app.kubernetes.io/part-of: dataio}
+  name: dataio-gui-service
+spec:
+  progressDeadlineSeconds: 180
+  replicas: 1
+  selector:
+    matchLabels: {app: gui-service}
+  strategy:
+    rollingUpdate: {maxSurge: 1, maxUnavailable: 0}
+    type: RollingUpdate
+  template:
+    metadata:
+      labels: {app: gui-service, app.dbc.dk/team: metascrum, app.kubernetes.io/component: service,
+        app.kubernetes.io/name: gui, app.kubernetes.io/part-of: dataio, network-policy-ftp-outgoing: 'yes',
+        network-policy-http-incoming: 'yes', network-policy-http-outgoing: 'yes',
+        network-policy-svn-outgoing: 'yes'}
+    spec:
+      containers:
+      - env:
+        - {name: JAVA_MAX_HEAP_SIZE, value: 8G}
+        - {name: TZ, value: "Europe/Copenhagen"}
+        image: docker-io.dbc.dk/dbc-payara-gui:master-28
+        livenessProbe:
+          failureThreshold: 3
+          httpGet: {path: /status, port: 8080}
+          initialDelaySeconds: 45
+          periodSeconds: 5
+        name: gui-service
+        ports:
+        - {containerPort: 8080, protocol: TCP}
+        readinessProbe:
+          failureThreshold: 9
+          httpGet: {path: /status, port: 8080}
+          initialDelaySeconds: 15
+          periodSeconds: 5
+      dnsConfig:
+        searches: [dbc.dk]
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels: {app: gui-service, app.dbc.dk/team: metascrum, app.kubernetes.io/component: service,
+    app.kubernetes.io/name: gui, app.kubernetes.io/part-of: dataio}
+  name: dataio-gui-service
+spec:
+  ports:
+  - {name: http, port: 80, protocol: TCP, targetPort: 8080}
+  selector: {app: gui-service}
+  type: ClusterIP

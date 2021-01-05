@@ -1,0 +1,7 @@
+apiVersion: apps/v1
+kind: Deployment
+spec:
+  template:
+    spec:
+      containers:
+      - image: docker-io.dbc.dk/dbc-payara-dummy-sink:master-27

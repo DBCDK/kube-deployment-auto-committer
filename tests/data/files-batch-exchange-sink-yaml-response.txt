@@ -1,0 +1,15 @@
+apiVersion: apps/v1
+kind: Deployment
+spec:
+    template:
+        spec:
+          containers:
+          - image: docker-io.dbc.dk/dbc-payara-batch-exchange-sink:TAG-2
+---
+apiVersion: apps/v1
+kind: Deployment
+spec:
+  template:
+    spec:
+      containers:
+      - image: docker-io.dbc.dk/dbc-payara-batch-exchange-sink:master-28

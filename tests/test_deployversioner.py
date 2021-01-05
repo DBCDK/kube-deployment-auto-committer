@@ -1,7 +1,5 @@
 #!/usr/bin/env python3
 
-# Copyright Dansk Bibliotekscenter a/s. Licensed under GPLv3
-# See license text in LICENSE.txt or at https://opensource.dbc.dk/licenses/gpl-3.0/
 import typing
 
 import io
@@ -11,15 +9,19 @@ import unittest.mock
 import pathlib
 import sys
 
+import requests
 import yaml
 
 import deployversioner.deployversioner
 
-@unittest.mock.patch("urllib.request.urlopen")
-class VerionerTests(unittest.TestCase):
+class TestDeployVersioner(unittest.TestCase):
+    def setUp(self):
+        self.tests_path = get_tests_path()
 
-    def test_set_image_tag(self, mock_urlopen):
-        mock_urlopen.side_effect=get_url_open_response_return_value
+    @unittest.mock.patch("requests.get", autospec=True)
+    def test_set_image_tag(self, mock_requests_get):
+        mock_requests_get.return_value = self.get_mock_response_from_file(
+            "data/files-gui-yaml-response.txt")
         gitlab_request = deployversioner.deployversioner.GitlabRequest(
             "gitlab.url", "token", 103, "staging")
         result, _ = deployversioner.deployversioner.set_image_tag(
@@ -29,16 +31,23 @@ class VerionerTests(unittest.TestCase):
         with open(configuration_path) as fp:
             depl_docs = [d for d in yaml.safe_load_all(io.BytesIO(fp.read().encode("utf8")))]
             self.assertEqual(docs, depl_docs)
+        self.assertEqual(mock_requests_get.call_count, 1)
 
-    def test_that_set_image_tag_sets_all_tags_in_a_yaml_doc(self, mock_urlopen):
-        mock_urlopen.side_effect = get_url_open_response_return_value
+    @unittest.mock.patch("requests.get", autospec=True)
+    def test_that_set_image_tag_sets_all_tags_in_a_yaml_doc(self, mock_requests_get):
+        mock_requests_get.return_value = self.get_mock_response_from_file(
+            "data/files-batch-exchange-sink-yaml-response.txt")
         gitlab_request = deployversioner.deployversioner.GitlabRequest(
             "gitlab.url", "token", 103, "staging")
         result,_ = deployversioner.deployversioner.set_image_tag(
             gitlab_request, "services/batch-exchange-sink.yml", "TAG-2")
         self.assertEqual(result.count("TAG-2"), 2)
+        self.assertEqual(mock_requests_get.call_count, 1)
 
-    def test_that_change_image_tag_makes_a_commit_message_covering_all_bumped_tags(self, mock_urlopen):
+    @unittest.mock.patch("requests.get", autospec=True)
+    @unittest.mock.patch("requests.post", autospec=True)
+    def test_that_change_image_tag_makes_a_commit_message_covering_all_bumped_tags(
+            self, mock_requests_post, mock_requests_get):
         repo_tree_response = json.dumps([
             {
                 "id": "5ab350dcf92bf662b2b309b4db83415afc2d6baa",
@@ -87,24 +96,25 @@ spec:
             "status": None,
             "project_id": 103
         })
-        mock_urlopen.side_effect = [
-            io.BytesIO(repo_tree_response.encode("utf8")),
-            io.BytesIO(file_content_responses[0].encode("utf8")),
-            io.BytesIO(file_content_responses[1].encode("utf8")),
-            io.BytesIO(commit_response.encode("utf8"))
+        mock_requests_get.side_effect = [
+            self.get_mock_response(repo_tree_response.encode("utf8")),
+            self.get_mock_response(file_content_responses[0].encode("utf8")),
+            self.get_mock_response(file_content_responses[1].encode("utf8")),
         ]
+        mock_requests_post.return_value = self.get_mock_response(commit_response.encode("utf8"))
         gitlab_request = deployversioner.deployversioner.GitlabRequest(
             "gitlab.url", "token", 103, "staging")
         proposed_commits, changed_image_tags = deployversioner.deployversioner.change_image_tag(
             gitlab_request, "files", "TAG-2")
         deployversioner.deployversioner.commit_changes(
             gitlab_request, proposed_commits, "TAG-2", changed_image_tags)
-        request = mock_urlopen.call_args[0][0]
-        commit_message=json.loads(request.data)["commit_message"]
-        self.assertIn('Bump docker tag from master-01 to TAG-2', commit_message)
-        self.assertIn('Bump docker tag from master-02 to TAG-2', commit_message)
+        request = mock_requests_post.call_args[1]
+        commit_message = json.loads(request["data"])["commit_message"]
+        self.assertEqual("Bump docker tag from master-01 to TAG-2" in commit_message, True)
+        self.assertEqual("Bump docker tag from master-02 to TAG-2" in commit_message, True)
 
-    def test_multiple_yaml_files(self, mock_urlopen):
+    @unittest.mock.patch("requests.get", autospec=True)
+    def test_multiple_yaml_files(self, mock_requests_get):
         repo_tree_response = json.dumps([
             {
                 "id": "5ab350dcf92bf662b2b309b4db83415afc2d6baa",
@@ -144,20 +154,22 @@ spec:
       containers:
       - image: docker-image:master-01
 """]
-        mock_urlopen.side_effect = [
-            io.BytesIO(repo_tree_response.encode("utf8")),
-            io.BytesIO(file_content_responses[0].encode("utf8")),
-            io.BytesIO(file_content_responses[1].encode("utf8"))
+        mock_requests_get.side_effect = [
+            self.get_mock_response(repo_tree_response.encode("utf8")),
+            self.get_mock_response(file_content_responses[0].encode("utf8")),
+            self.get_mock_response(file_content_responses[1].encode("utf8"))
         ]
         gitlab_request = deployversioner.deployversioner.GitlabRequest(
             "gitlab.url", "token", 103, "staging")
         result = deployversioner.deployversioner.change_image_tag(
             gitlab_request, "files", "master-02")
         self.assertEqual(len(result), 2)
-        self.assertEqual(mock_urlopen.call_count, 3)
+        self.assertEqual(mock_requests_get.call_count, 3)
 
-    def test_set_image_tag_identical_new_tag(self, mock_urlopen):
-        mock_urlopen.side_effect = get_url_open_response_return_value
+    @unittest.mock.patch("requests.get", autospec=True)
+    def test_set_image_tag_identical_new_tag(self, mock_requests_get):
+        mock_requests_get.return_value = self.get_mock_response_from_file(
+            "data/files-services-dummy-sink-yaml-response.txt")
         gitlab_request = deployversioner.deployversioner.GitlabRequest(
             "gitlab.url", "token", 103, "staging")
         with self.assertRaises(deployversioner.deployversioner
@@ -165,13 +177,15 @@ spec:
             deployversioner.deployversioner.set_image_tag(
                 gitlab_request, "services/dummy-sink.yml", "master-27")
 
-    def test_parse_image(self, mock_urlopen):
+    def test_parse_image(self):
         image = "docker-io.dbc.dk/author-name-suggester-service:master-9"
         imagename, image_tag = deployversioner.deployversioner.parse_image(image)
         self.assertEqual(imagename, "docker-io.dbc.dk/author-name-suggester-service")
         self.assertEqual(image_tag, "master-9")
 
-    def test_commit_changes(self, mock_urlopen):
+    @unittest.mock.patch("requests.get", autospec=True)
+    @unittest.mock.patch("requests.post", autospec=True)
+    def test_commit_changes(self, mock_requests_post, mock_requests_get):
         repo_tree_response = json.dumps([
             {
                 "id": "5ab350dcf92bf662b2b309b4db83415afc2d6baa",
@@ -203,58 +217,47 @@ spec:
             "status": None,
             "project_id": 103
         })
-        mock_urlopen.side_effect = [
-            io.BytesIO(repo_tree_response.encode("utf8")),
-            io.BytesIO(file_content_response.encode("utf8")),
-            io.BytesIO(commit_response.encode("utf8"))]
+        mock_requests_get.side_effect = [
+            self.get_mock_response(repo_tree_response.encode("utf8")),
+            self.get_mock_response(file_content_response.encode("utf8")),
+        ]
+        mock_requests_post.return_value = self.get_mock_response(
+            commit_response.encode("utf8"))
         gitlab_request = deployversioner.deployversioner.GitlabRequest(
             "gitlab.url", "token", 103, "staging")
         proposed_commits, changed_tags = deployversioner.deployversioner.change_image_tag(
             gitlab_request, "files", "TAG-2")
         deployversioner.deployversioner.commit_changes(
             gitlab_request, proposed_commits, "TAG-2", changed_tags)
-        request = mock_urlopen.call_args[0][0]
-        data=json.loads(request.data)
+        request = mock_requests_post.call_args[1]
+        data = json.loads(request["data"])
 
-        self.assertEqual(request.method, "POST")
         self.assertEqual([d["file_path"] for d in data["actions"]].sort(),
                          ["services/dummy-sink.yml", "services/batch-exchange-sink.yml", "services/diff-sink.yml"].sort())
         self.assertEqual(set([d['action'] for d in data["actions"]]), {"update"})
         self.assertEqual(data["branch"], "staging")
         self.assertEqual(data["commit_message"], "Bump docker tag to TAG-2\n\nBump docker tag from master-01 to TAG-2")
-        self.assertEqual(request.headers, {'Private-token': 'token',
-            'Content-type': 'application/json'})
+        self.assertEqual(request["headers"], {"private-token": "token",
+            "Content-Type": "application/json"})
 
-    def test_get_file_contents(self, mock_urlopen):
-        mock_urlopen.side_effect = get_url_open_response_return_value
+    @unittest.mock.patch("requests.get", autospec=True)
+    def test_get_file_contents(self, mock_requests_get):
+        mock_requests_get.return_value = self.get_mock_response_from_file(
+            "data/files-gui-yaml-response.txt")
         gitlab_request = deployversioner.deployversioner.GitlabRequest(
             "gitlab.url", "token", 103, "staging")
         deployversioner.deployversioner.get_file_contents(
             gitlab_request, "gui.yaml")
-        request = mock_urlopen.call_args[0][0]
-        self.assertEqual(request.full_url,
+        self.assertEqual(mock_requests_get.call_count, 1)
+        request = mock_requests_get.call_args[0][0]
+        self.assertEqual(mock_requests_get.call_args[0][0],
             "https://gitlab.url/api/v4/projects/103/repository/files/gui.yaml/raw?ref=staging")
-        self.assertEqual(request.method, "GET")
-        self.assertEqual(request.headers, {"Private-token": "token"})
+        self.assertEqual(mock_requests_get.call_args[1]["headers"], {"private-token": "token"})
 
-    def test_file_does_not_exist(self, mock_urlopen):
-        repo_tree_response = json.dumps([
-            {
-                "id": "5ab350dcf92bf662b2b309b4db83415afc2d6baa",
-                "name": "files",
-                "type": "tree",
-                "path": "files",
-                "mode": "040000"
-            },
-            {
-                "id": "a240c0e70890a799d51a8aee556808d98e689a36",
-                "name": "file1.yml",
-                "type": "blob",
-                "path": "files/file1.yml",
-                "mode": "100644"
-            }]
-        )
-        mock_urlopen.return_value = io.BytesIO(repo_tree_response.encode("utf8"))
+    # TODO: this test doesn't seem to make sense
+    @unittest.mock.patch("requests.get", autospec=True)
+    @unittest.mock.patch("requests.post", autospec=True)
+    def test_file_does_not_exist(self, mock_requests_post, mock_requests_get):
         gitlab_request = deployversioner.deployversioner.GitlabRequest(
             "gitlab.url", "token", 103, "staging")
         with self.assertRaises(deployversioner.deployversioner
@@ -262,12 +265,25 @@ spec:
             deployversioner.deployversioner.change_image_tag(
                 gitlab_request, "services/no_exist.yaml", "TAG-2")
 
-    def test_get_project_number(self, mock_urlopen):
-        mock_urlopen.side_effect = get_url_open_response_return_value
+    @unittest.mock.patch("requests.get", autospec=True)
+    def test_get_project_number(self, mock_requests_get):
+        mock_requests_get.return_value = self.get_mock_response_from_file(
+            "data/projects-test-namespace-test-project-response.txt")
         self.assertEqual( 103, deployversioner.deployversioner
             .get_project_number( 'https://gitlab.url/api/v4/projects',
             'test_namespace/test_project', 'token') )
+        self.assertEqual(mock_requests_get.call_count, 1)
 
+    def get_mock_response(self, content):
+        mock_response = unittest.mock.Mock(requests.Response)
+        mock_response.content = content
+        mock_response.text = mock_response.content.decode("utf8")
+        mock_response.json = lambda: json.loads(mock_response.text)
+        return mock_response
+
+    def get_mock_response_from_file(self, response_filename):
+        with open(os.path.join(self.tests_path, response_filename), "rb") as fp:
+            return self.get_mock_response(fp.read())
 
 def get_tests_path():
     try:
@@ -276,163 +292,3 @@ def get_tests_path():
         return str(p.parents[0])
     except IndexError:
         return "tests"
-
-
-def get_url_open_response_return_value(request):
-    return io.BytesIO(url_open_response_return_values[request.full_url].encode('utf-8'))
-
-
-
-########################################################
-# Data here as url-request=>response key/value pairs   #
-########################################################
-
-url_open_response_return_values = {
-    "https://gitlab.url/api/v4/projects/103/repository/tree/?ref=staging&recursive=True&per_page=5000": """[
-          {
-            "id": "5ab350dcf92bf662b2b309b4db83415afc2d6baa",
-            "name": "services",
-            "type": "tree",
-            "path": "services",
-            "mode": "040000"
-          },
-          {
-            "id": "bcd9a9d1d8364a323486c8388cd59287b5cd8ef4",
-            "name": "gui.yaml",
-            "type": "blob",
-            "path": "gui.yaml",
-            "mode": "100644"
-          },
-          {
-            "id": "3c8c72f32e71b0f63103adfae6519a38bcb518ec",
-            "name": "batch-exchange-sink.yml",
-            "type": "blob",
-            "path": "services/batch-exchange-sink.yml",
-            "mode": "100644"
-          },
-          {
-            "id": "8debbafc24584d1da20010c1667bf20568f3add1",
-            "name": "diff-sink.yml",
-            "type": "blob",
-            "path": "services/diff-sink.yml",
-            "mode": "100644"
-          },
-          {
-            "id": "a240c0e70890a799d51a8aee556808d98e689a36",
-            "name": "dummy-sink.yml",
-            "type": "blob",
-            "path": "services/dummy-sink.yml",
-            "mode": "100644"
-          }
-        ]""",
-
-
-        "https://gitlab.url/api/v4/projects/103/repository/files/gui.yaml/raw?ref=staging": """apiVersion: apps/v1
-kind: Deployment
-metadata:
-  labels: {app: dataio-gui-service, app.dbc.dk/team: metascrum, app.kubernetes.io/component: service,
-    app.kubernetes.io/name: gui, app.kubernetes.io/part-of: dataio}
-  name: dataio-gui-service
-spec:
-  progressDeadlineSeconds: 180
-  replicas: 1
-  selector:
-    matchLabels: {app: gui-service}
-  strategy:
-    rollingUpdate: {maxSurge: 1, maxUnavailable: 0}
-    type: RollingUpdate
-  template:
-    metadata:
-      labels: {app: gui-service, app.dbc.dk/team: metascrum, app.kubernetes.io/component: service,
-        app.kubernetes.io/name: gui, app.kubernetes.io/part-of: dataio, network-policy-ftp-outgoing: 'yes',
-        network-policy-http-incoming: 'yes', network-policy-http-outgoing: 'yes',
-        network-policy-svn-outgoing: 'yes'}
-    spec:
-      containers:
-      - env:
-        - {name: JAVA_MAX_HEAP_SIZE, value: 8G}
-        - {name: TZ, value: "Europe/Copenhagen"}
-        image: docker-io.dbc.dk/dbc-payara-gui:master-28
-        livenessProbe:
-          failureThreshold: 3
-          httpGet: {path: /status, port: 8080}
-          initialDelaySeconds: 45
-          periodSeconds: 5
-        name: gui-service
-        ports:
-        - {containerPort: 8080, protocol: TCP}
-        readinessProbe:
-          failureThreshold: 9
-          httpGet: {path: /status, port: 8080}
-          initialDelaySeconds: 15
-          periodSeconds: 5
-      dnsConfig:
-        searches: [dbc.dk]
----
-apiVersion: v1
-kind: Service
-metadata:
-  labels: {app: gui-service, app.dbc.dk/team: metascrum, app.kubernetes.io/component: service,
-    app.kubernetes.io/name: gui, app.kubernetes.io/part-of: dataio}
-  name: dataio-gui-service
-spec:
-  ports:
-  - {name: http, port: 80, protocol: TCP, targetPort: 8080}
-  selector: {app: gui-service}
-  type: ClusterIP""",
-
-
-    "https://gitlab.url/api/v4/projects/103/repository/files/services%2Fbatch-exchange-sink.yml/raw?ref=staging": """apiVersion: apps/v1
-kind: Deployment
-spec:
-    template:
-        spec:
-          containers:
-          - image: docker-io.dbc.dk/dbc-payara-batch-exchange-sink:TAG-2
-          
----
-apiVersion: apps/v1
-kind: Deployment
-spec:
-  template:
-    spec:
-      containers:
-      - image: docker-io.dbc.dk/dbc-payara-batch-exchange-sink:master-28
-""",
-
-
-    "https://gitlab.url/api/v4/projects/103/repository/files/services%2Fdiff-sink.yml/raw?ref=staging": """apiVersion: apps/v1
-kind: Deployment
-spec:
-  template:
-    spec:
-      containers:
-      - image: docker-io.dbc.dk/dbc-payara-diff-sink:master-28
-""",
-
-
-
-    "https://gitlab.url/api/v4/projects/103/repository/files/services%2Fdummy-sink.yml/raw?ref=staging":"""apiVersion: apps/v1
-kind: Deployment
-spec:
-  template:
-    spec:
-      containers:
-      - image: docker-io.dbc.dk/dbc-payara-dummy-sink:master-27
-""",
-
-
-    "https://gitlab.url/api/v4/projects/103/repository/commits?ref=staging": """{
-  "id": "82b15418fdd0048a8aba1d61e7f5d81db312bdda",   
-  "title": "Bump docker tag to TAG-2",
-  "message": "Bump docker tag to TAG-2",
-  "status": null,
-  "project_id": 103
-}""",
-
-    "https://gitlab.url/api/v4/projects/test_namespace%2Ftest_project": """{"id": 103,
-  "name_with_namespace": "test_namespace / test_poject",
-  "approvals_before_merge": 0,
-  "mirror": false
-}"""
-}

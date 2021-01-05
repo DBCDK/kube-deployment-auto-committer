@@ -1,17 +1,13 @@
 #!/usr/bin/env python3
 
-# Copyright Dansk Bibliotekscenter a/s. Licensed under GPLv3
-# See license text in LICENSE.txt or at https://opensource.dbc.dk/licenses/gpl-3.0/
-
 import argparse
 import collections
 import json
 import sys
 import typing
-import urllib.error
 import urllib.parse
-import urllib.request
 
+import requests
 import yaml
 
 GitlabRequest = collections.namedtuple("GitlabRequest", ["url", "api_token",
@@ -35,27 +31,25 @@ def get_file_contents(gitlab_request: GitlabRequest, filename: str) -> str:
     headers = {"private-token": gitlab_request.api_token}
     url = "{}/api/v4/projects/{}/repository/files/{}/raw?ref={}".format(url,
         gitlab_request.project_id, urllib.parse.quote(filename, safe=""), gitlab_request.branch)
-    request = urllib.request.Request(url, headers=headers, method="GET")
     try:
-        page = urllib.request.urlopen(request)
-        return page.read().decode("utf8")
-    except urllib.error.URLError as e:
+        response = requests.get(url, headers=headers)
+        response.raise_for_status()
+        return response.text
+    except requests.exceptions.HTTPError as e:
         raise VersionerError("unable to get contents of {}: {}".format(
             filename, e))
 
-
 def get_project_number(gitlab_get_projects_url: str, project_name:str, token:str) -> int:
     url = "{}/{}".format( gitlab_get_projects_url, urllib.parse.quote(project_name, safe='') )
-    request = urllib.request.Request( url ,
-                                      method="GET",
-                                      headers={"private-token": token} )
     try:
-        page = urllib.request.urlopen(request)
-        return  json.loads( page.read().decode("utf8") )["id"]
-
-    except urllib.error.URLError as e:
+        response = requests.get(url, headers={"private-token": token})
+        response.raise_for_status()
+        js = response.json()
+        if "id" in js:
+            return js["id"]
+        raise VersionerError(f"No id found in response for url {url}: {js}")
+    except requests.exceptions.HTTPError as e:
         raise VersionerError("unable to get contents of {}: {}".format( url, e))
-
 
 def set_image_tag(gitlab_request: GitlabRequest, filename: str,
         new_image_tag: str) -> typing.Tuple[typing.Any, set]:
@@ -114,10 +108,10 @@ def change_image_tag(gitlab_request: GitlabRequest, file_object: str, image_tag:
     headers = {"private-token": gitlab_request.api_token}
     path = "/".join(file_object.split("/")[:-1])
     url = f"{url}/api/v4/projects/{gitlab_request.project_id}/repository/tree/?ref={gitlab_request.branch}&recursive=True&per_page=5000&path={path}"
-    request = urllib.request.Request(url, headers=headers, method="GET")
     try:
-        page = urllib.request.urlopen(request)
-        file_tree = json.loads(page.read().decode("utf8"))
+        response = requests.get(url, headers=headers)
+        response.raise_for_status()
+        file_tree = response.json()
         if not file_object=="" and file_object not in [n["path"] for n in file_tree]:
             raise VersionerFileNotFound("File or dir {} not found".format(file_object))
         changes = [changes for changes in
@@ -129,7 +123,7 @@ def change_image_tag(gitlab_request: GitlabRequest, file_object: str, image_tag:
             proposed_commits.append(change["commit_blob"])
             changed_image_tags.update(change["changed_image_tags"])
         return proposed_commits, changed_image_tags
-    except urllib.error.URLError as e:
+    except requests.exceptions.HTTPError as e:
         raise VersionerError("unable to get contents of dir: {}: {}".format(
             file_object, e))
 
@@ -151,13 +145,13 @@ def commit_changes(gitlab_request: GitlabRequest, proposed_commits: dict, tag:st
     url = "{}/api/v4/projects/{}/repository/commits?ref={}".format(url,
                                                                                 gitlab_request.project_id,
                                                                                 gitlab_request.branch)
-    request = urllib.request.Request(url, headers=headers, method="POST", data=json.dumps(commit_blob).encode())
     try:
-        page = urllib.request.urlopen(request)
-        p = page.read().decode("utf8")
-        if not json.loads(p)["status"]==None:
-            raise VersionerError("unable to do commit. Status from {} is {}".format(url, p))
-    except urllib.error.URLError as e:
+        response = requests.post(url, headers=headers, data=json.dumps(commit_blob))
+        response.raise_for_status()
+        js = response.json()
+        if js["status"] is not None:
+            raise VersionerError("unable to do commit. Status from {} is {}".format(url, js))
+    except requests.exceptions.HTTPError as e:
         raise VersionerError("unable to do commit to repository at: {}  with docker-tag:{}\n {}".format(
             url, tag, e))
 
