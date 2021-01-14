@@ -11,7 +11,7 @@ setup(name="deployversioner",
     packages=["deployversioner"],
     description="",
     provides=["deployversioner"],
-    install_requires=["pyyaml", "requests"],
+    install_requires=["pyyaml", "requests", "urllib3>=1.26"],
     entry_points=
         {"console_scripts": [
             "set-new-version = deployversioner.deployversioner:main"
