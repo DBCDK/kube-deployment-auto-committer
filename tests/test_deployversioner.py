@@ -45,9 +45,9 @@ class TestDeployVersioner(unittest.TestCase):
         self.assertEqual(mock_requests_get.call_count, 1)
 
     @unittest.mock.patch("requests.get", autospec=True)
-    @unittest.mock.patch("requests.post", autospec=True)
+    @unittest.mock.patch("requests.Session", autospec=True)
     def test_that_change_image_tag_makes_a_commit_message_covering_all_bumped_tags(
-            self, mock_requests_post, mock_requests_get):
+            self, mock_requests_session, mock_requests_get):
         repo_tree_response = json.dumps([
             {
                 "id": "5ab350dcf92bf662b2b309b4db83415afc2d6baa",
@@ -101,14 +101,15 @@ spec:
             self.get_mock_response(file_content_responses[0].encode("utf8")),
             self.get_mock_response(file_content_responses[1].encode("utf8")),
         ]
-        mock_requests_post.return_value = self.get_mock_response(commit_response.encode("utf8"))
+        mock_requests_session.return_value.post.return_value = self.get_mock_response(
+            commit_response.encode("utf8"))
         gitlab_request = deployversioner.deployversioner.GitlabRequest(
             "gitlab.url", "token", 103, "staging")
         proposed_commits, changed_image_tags = deployversioner.deployversioner.change_image_tag(
             gitlab_request, "files", "TAG-2")
         deployversioner.deployversioner.commit_changes(
             gitlab_request, proposed_commits, "TAG-2", changed_image_tags)
-        request = mock_requests_post.call_args[1]
+        request = mock_requests_session.return_value.post.call_args[1]
         commit_message = json.loads(request["data"])["commit_message"]
         self.assertEqual("Bump docker tag from master-01 to TAG-2" in commit_message, True)
         self.assertEqual("Bump docker tag from master-02 to TAG-2" in commit_message, True)
@@ -184,8 +185,8 @@ spec:
         self.assertEqual(image_tag, "master-9")
 
     @unittest.mock.patch("requests.get", autospec=True)
-    @unittest.mock.patch("requests.post", autospec=True)
-    def test_commit_changes(self, mock_requests_post, mock_requests_get):
+    @unittest.mock.patch("requests.Session", autospec=True)
+    def test_commit_changes(self, mock_requests_session, mock_requests_get):
         repo_tree_response = json.dumps([
             {
                 "id": "5ab350dcf92bf662b2b309b4db83415afc2d6baa",
@@ -221,7 +222,7 @@ spec:
             self.get_mock_response(repo_tree_response.encode("utf8")),
             self.get_mock_response(file_content_response.encode("utf8")),
         ]
-        mock_requests_post.return_value = self.get_mock_response(
+        mock_requests_session.return_value.post.return_value = self.get_mock_response(
             commit_response.encode("utf8"))
         gitlab_request = deployversioner.deployversioner.GitlabRequest(
             "gitlab.url", "token", 103, "staging")
@@ -229,7 +230,7 @@ spec:
             gitlab_request, "files", "TAG-2")
         deployversioner.deployversioner.commit_changes(
             gitlab_request, proposed_commits, "TAG-2", changed_tags)
-        request = mock_requests_post.call_args[1]
+        request = mock_requests_session.return_value.post.call_args[1]
         data = json.loads(request["data"])
 
         self.assertEqual([d["file_path"] for d in data["actions"]].sort(),
@@ -239,6 +240,61 @@ spec:
         self.assertEqual(data["commit_message"], "Bump docker tag to TAG-2\n\nBump docker tag from master-01 to TAG-2")
         self.assertEqual(request["headers"], {"private-token": "token",
             "Content-Type": "application/json"})
+
+    @unittest.mock.patch("requests.get", autospec=True)
+    @unittest.mock.patch("requests.Session", autospec=True)
+    def test_commit_changes_error_400(self, mock_requests_session,
+            mock_requests_get):
+        repo_tree_response = json.dumps([
+            {
+                "id": "5ab350dcf92bf662b2b309b4db83415afc2d6baa",
+                "name": "files",
+                "type": "tree",
+                "path": "files",
+            },
+            {
+                "id": "a240c0e70890a799d51a8aee556808d98e689a36",
+                "name": "file1.yml",
+                "type": "blob",
+                "path": "files/file1.yml",
+            }]
+        )
+        file_content_response = """apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: service
+spec:
+  template:
+    spec:
+      containers:
+      - image: docker-image:master-01
+"""
+        commit_response = json.dumps({
+            "id": "82b15418fdd0048a8aba1d61e7f5d81db312bdda",
+            "title": "Bump docker tag to TAG-2",
+            "message": "Bump docker tag to TAG-2",
+            "status": None,
+            "project_id": 103
+        })
+        mock_requests_get.side_effect = [
+            self.get_mock_response(repo_tree_response.encode("utf8")),
+            self.get_mock_response(file_content_response.encode("utf8")),
+        ]
+        # I would ideally like to test the retry logic here but I can't figure out how to mock it.
+        commit_response = requests.Response()
+        commit_response.status_code = 400
+        # wraps makes sure that methods of the original object is called
+        mock_commit_response = unittest.mock.Mock(requests.Response,
+            wraps=commit_response)
+        mock_requests_session.return_value.post.return_value = mock_commit_response
+        gitlab_request = deployversioner.deployversioner.GitlabRequest(
+            "gitlab.url", "token", 103, "staging")
+        proposed_commits, changed_tags = deployversioner.deployversioner.change_image_tag(
+            gitlab_request, "files", "TAG-2")
+        with self.assertRaises(deployversioner.deployversioner
+                .VersionerError):
+            deployversioner.deployversioner.commit_changes(
+                gitlab_request, proposed_commits, "TAG-2", changed_tags)
 
     @unittest.mock.patch("requests.get", autospec=True)
     def test_get_file_contents(self, mock_requests_get):

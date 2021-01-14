@@ -8,6 +8,8 @@ import typing
 import urllib.parse
 
 import requests
+from requests.adapters import HTTPAdapter
+from requests.packages.urllib3.util.retry import Retry
 import yaml
 
 GitlabRequest = collections.namedtuple("GitlabRequest", ["url", "api_token",
@@ -143,15 +145,22 @@ def commit_changes(gitlab_request: GitlabRequest, proposed_commits: dict, tag:st
         url = "https://{}".format(url)
     headers = {"private-token": gitlab_request.api_token, "Content-Type": "application/json"}
     url = "{}/api/v4/projects/{}/repository/commits?ref={}".format(url,
-                                                                                gitlab_request.project_id,
-                                                                                gitlab_request.branch)
+        gitlab_request.project_id,
+        gitlab_request.branch)
     try:
-        response = requests.post(url, headers=headers, data=json.dumps(commit_blob))
+        session = requests.Session()
+        # Normally status 400 means that you shouldn't retry the request but in this case it seems to work
+        adapter = HTTPAdapter(max_retries=Retry(total=3,
+            status_forcelist=[400], allowed_methods=["POST"],
+            backoff_factor=2))
+        session.mount("http://", adapter)
+        session.mount("https://", adapter)
+        response = session.post(url, headers=headers, data=json.dumps(commit_blob))
         response.raise_for_status()
         js = response.json()
         if js["status"] is not None:
-            raise VersionerError("unable to do commit. Status from {} is {}".format(url, js))
-    except requests.exceptions.HTTPError as e:
+            raise VersionerError(f"Unable to do commit with data {commit_blob}. Status from {url} is {js}")
+    except (requests.exceptions.HTTPError, requests.exceptions.RetryError) as e:
         raise VersionerError("unable to do commit to repository at: {}  with docker-tag:{}\n {}".format(
             url, tag, e))
 
