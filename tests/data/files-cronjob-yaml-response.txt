@@ -1,0 +1,68 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: filmstriben-mail-cronjob
+  labels:
+    app: filmstriben-mail-cronjob
+spec:
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 2
+  failedJobsHistoryLimit: 2
+  schedule: "*/5 * * * *"
+  jobTemplate:
+    spec:
+      backoffLimit: 0
+      template:
+        metadata:
+          labels:
+            app: filmstriben-mail-cronjob
+            network-policy-dmzproxy-outgoing: 'yes'
+            network-policy-http-incoming: 'yes'
+            network-policy-http-outgoing: 'yes'
+            network-policy-https-incoming: 'yes'
+            network-policy-https-outgoing: 'yes'
+            network-policy-mail-outgoing: 'yes'
+            network-policy-postgres-outgoing: 'yes'
+        spec:
+          dnsConfig:
+            searches:
+              - dbc.dk
+          containers:
+            - image: docker-ux.dbc.dk/filmstriben-budget:main-170
+              name: filmstriben-budget
+              env:
+                - name: NODE_ENV
+                  value: production
+                - name: MAIL_HOST
+                  value: testmailhost.frontend-staging.svc.cloud.dbc.dk
+                - name: SEND_MAILS
+                  value: 'no'
+                - name: RECIPIENTS
+                  value: kisc@dbc.dk, rabr@dbc.dk
+                - name: TRUST_PROXY
+                  value: '1'
+                - name: HTTPS_PROXY
+                  value: http://dmzproxy.dbc.dk:3128
+                - name: no_proxy
+                  value: .dbc.dk,.addi.dk,.bib.dk
+                - name: CYPRESS_TESTLIB_PASS
+                  value: skroffost
+                - name: DATABASE_URL
+                  value: postgresql://budget_filmstriben:Tml61MjfMvwj@db.budget-filmstriben-v13.stg.dbc.dk:5432/budget_filmstriben_db
+                - name: NEXTAUTH_URL
+                  value: https://budget-stg.filmstriben.dk
+                - name: CLIENT_ID
+                  value: 5bbbf715-0cbf-428b-b474-b71b252c8c74
+                - name: CLIENT_SECRET
+                  value: e22bc91acb490055078a38720bb66ac5d6824a8949cc4c7ee9e0264ae7a86b49
+                - name: ENABLE_STORYBOOK
+                  value: '1'
+                - name: STORYBOOK_PORT
+                  value: '4000'
+                - name: PORT
+                  value: '3000'
+              args:
+                - /bin/bash
+                - -c
+                - k8s-dns-wait && cd ./cronjobs/budget-mail-job && node index.js
+          restartPolicy: Never

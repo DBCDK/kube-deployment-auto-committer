@@ -43,6 +43,17 @@ class TestDeployVersioner(unittest.TestCase):
             gitlab_request, "services/batch-exchange-sink.yml", "TAG-2")
         self.assertEqual(result.count("TAG-2"), 2)
         self.assertEqual(mock_requests_get.call_count, 1)
+    
+    @unittest.mock.patch("requests.get", autospec=True)
+    def test_that_set_image_tag_sets_all_tags_in_a_cronjob_yaml_doc(self, mock_requests_get):
+        mock_requests_get.return_value = self.get_mock_response_from_file(
+            "data/files-cronjob-yaml-response.txt")
+        gitlab_request = deployversioner.deployversioner.GitlabRequest(
+            "gitlab.url", "token", 103, "staging")
+        result,_ = deployversioner.deployversioner.set_image_tag(
+            gitlab_request, "services/batch-exchange-sink.yml", "main-171")
+        self.assertEqual(result.count("main-171"), 1)
+        self.assertEqual(mock_requests_get.call_count, 1)
 
     @unittest.mock.patch("requests.get", autospec=True)
     @unittest.mock.patch("requests.Session", autospec=True)
