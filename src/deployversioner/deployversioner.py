@@ -65,7 +65,7 @@ def set_image_tag(gitlab_request: GitlabRequest, filename: str,
                 if doc["kind"] == 'CronJob':
                     containers = doc["spec"]["jobTemplate"]["spec"]["template"]["spec"]["containers"]
                 else:
-                containers = doc["spec"]["template"]["spec"]["containers"]
+                    containers = doc["spec"]["template"]["spec"]["containers"]
                 if len(containers) > 1:
                     raise VersionerError(
                         "too many container templates in the deployment")
