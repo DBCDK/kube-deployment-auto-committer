@@ -56,12 +56,12 @@ def get_project_number(gitlab_get_projects_url: str, project_name:str, token:str
 def set_image_tag(gitlab_request: GitlabRequest, filename: str,
         new_image_tag: str) -> typing.Tuple[typing.Any, set]:
     file_contents = get_file_contents(gitlab_request, filename)
-    docs = [d for d in yaml.safe_load_all(file_contents)]
+    docs = [d for d in yaml.safe_load_all(file_contents) if d is not None]
     changed=False
     changed_image_tags = set()
     for doc in docs:
         # added guard for None type as the script would otherwise fail on services with --- seperators
-        if doc != None and "kind" in doc and doc["kind"] in ["Deployment", "StatefulSet", "CronJob", "Job"]:
+        if "kind" in doc and doc["kind"] in ["Deployment", "StatefulSet", "CronJob", "Job"]:
             try:
                 if doc["kind"] == 'CronJob':
                     containers = doc["spec"]["jobTemplate"]["spec"]["template"]["spec"]["containers"]
@@ -77,7 +77,6 @@ def set_image_tag(gitlab_request: GitlabRequest, filename: str,
                     containers[0]["image"] = "{}:{}".format(imagename,
                         new_image_tag)
                     changed=True
-
             except IndexError as e:
                 raise VersionerError(e)
     if not changed:
