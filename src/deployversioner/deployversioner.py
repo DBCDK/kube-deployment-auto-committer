@@ -60,7 +60,8 @@ def set_image_tag(gitlab_request: GitlabRequest, filename: str,
     changed=False
     changed_image_tags = set()
     for doc in docs:
-        if "kind" in doc and doc["kind"] in ["Deployment", "StatefulSet", "CronJob", "Job"]:
+        # added guard for None type as the script would otherwise fail on services with --- seperators
+        if doc != None and "kind" in doc and doc["kind"] in ["Deployment", "StatefulSet", "CronJob", "Job"]:
             try:
                 if doc["kind"] == 'CronJob':
                     containers = doc["spec"]["jobTemplate"]["spec"]["template"]["spec"]["containers"]
