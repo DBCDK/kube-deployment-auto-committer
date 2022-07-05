@@ -60,8 +60,7 @@ def set_image_tag(gitlab_request: GitlabRequest, filename: str,
     changed=False
     changed_image_tags = set()
     for doc in docs:
-        # added guard for None type as the script would otherwise fail on headless services
-        # should not have any negative effects, as headless currently does not contain docker tag/buildnr information
+        # added guard for None type as the script would otherwise fail on services with --- seperators
         if doc != None and "kind" in doc and doc["kind"] in ["Deployment", "StatefulSet", "CronJob", "Job"]:
             try:
                 if doc["kind"] == 'CronJob':
