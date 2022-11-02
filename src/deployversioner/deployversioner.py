@@ -105,7 +105,7 @@ def get_content(gitlab_request: GitlabRequest, file: typing.Dict, image_tag: str
         return {"commit_blob": {}, "changed_image_tags": set()}
     return {"commit_blob": commit_blob, "changed_image_tags": changed_tags}
 
-def fetch_page_and_append(api_token, url, page_number, old_value = []):
+def fetch_page_and_append(api_token, url, page_number, old_value):
     r"""fetch a page from url and return a new value of old_value + fetched data.
 
     Expects page to be a JSON array and appends the fetched page to the old_value fetch
