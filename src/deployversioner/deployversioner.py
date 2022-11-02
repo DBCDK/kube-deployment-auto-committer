@@ -119,7 +119,10 @@ def fetch_page_and_append(api_token, url, page_number, old_value = []):
     response.raise_for_status()
     current_page = response.json()
     new_value = old_value + current_page
-    return new_value, len(current_page)
+    if len(current_page) == 100:
+        return new_value, True
+    else:
+        return new_value, False
 
 def change_image_tag(gitlab_request: GitlabRequest, file_object: str, image_tag: str) -> typing.Tuple[typing.Any, set]:
     url = gitlab_request.url
@@ -129,10 +132,10 @@ def change_image_tag(gitlab_request: GitlabRequest, file_object: str, image_tag:
     url = f"{url}/api/v4/projects/{gitlab_request.project_id}/repository/tree/?ref={gitlab_request.branch}&recursive=True&path={path}"
     page_number = 1
     try:
-        (file_tree, fetch_length) = fetch_page_and_append(gitlab_request.api_token, url, page_number, [])
-        while fetch_length > 0:
+        (file_tree, more_to_fetch) = fetch_page_and_append(gitlab_request.api_token, url, page_number, [])
+        while more_to_fetch:
             page_number += 1
-            (file_tree, fetch_length) = fetch_page_and_append(gitlab_request.api_token, url, page_number, file_tree)
+            (file_tree, more_to_fetch) = fetch_page_and_append(gitlab_request.api_token, url, page_number, file_tree)
 
 
         if not file_object=="" and file_object not in [n["path"] for n in file_tree]:
