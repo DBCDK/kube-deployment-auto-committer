@@ -105,18 +105,39 @@ def get_content(gitlab_request: GitlabRequest, file: typing.Dict, image_tag: str
         return {"commit_blob": {}, "changed_image_tags": set()}
     return {"commit_blob": commit_blob, "changed_image_tags": changed_tags}
 
+def fetch_page_and_append(api_token, url, page_number, old_value):
+    r"""fetch a page from url and return a new value of old_value + fetched data.
+
+    Expects page to be a JSON array and appends the fetched page to the old_value fetch
+
+    :param api_token to the gitlab api
+    :param url without any paging arguments
+    :param page_number
+    :param old_value previous array that this page is added to.
+    """
+    response = requests.get(f"{url}&per_page=100&page={page_number}", headers={"private-token": api_token})
+    response.raise_for_status()
+    current_page = response.json()
+    new_value = old_value + current_page
+    if len(current_page) == 100:
+        return new_value, True
+    else:
+        return new_value, False
 
 def change_image_tag(gitlab_request: GitlabRequest, file_object: str, image_tag: str) -> typing.Tuple[typing.Any, set]:
     url = gitlab_request.url
     if url[:4] != "http":
         url = "https://{}".format(url)
-    headers = {"private-token": gitlab_request.api_token}
     path = "/".join(file_object.split("/")[:-1])
-    url = f"{url}/api/v4/projects/{gitlab_request.project_id}/repository/tree/?ref={gitlab_request.branch}&recursive=True&per_page=5000&path={path}"
+    url = f"{url}/api/v4/projects/{gitlab_request.project_id}/repository/tree/?ref={gitlab_request.branch}&recursive=True&path={path}"
+    page_number = 1
     try:
-        response = requests.get(url, headers=headers)
-        response.raise_for_status()
-        file_tree = response.json()
+        (file_tree, more_to_fetch) = fetch_page_and_append(gitlab_request.api_token, url, page_number, [])
+        while more_to_fetch:
+            page_number += 1
+            (file_tree, more_to_fetch) = fetch_page_and_append(gitlab_request.api_token, url, page_number, file_tree)
+
+
         if not file_object=="" and file_object not in [n["path"] for n in file_tree]:
             raise VersionerFileNotFound("File or dir {} not found".format(file_object))
         changes = [changes for changes in
@@ -131,6 +152,7 @@ def change_image_tag(gitlab_request: GitlabRequest, file_object: str, image_tag:
     except requests.exceptions.HTTPError as e:
         raise VersionerError("unable to get contents of dir: {}: {}".format(
             file_object, e))
+
 
 def format_commit_message(tag: str, changed_image_tags: typing.Set[str]):
     lines = ["Bump docker tag from {} to {}".format(existing_image_tag, tag) for existing_image_tag in
