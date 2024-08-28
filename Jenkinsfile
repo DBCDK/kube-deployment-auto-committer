@@ -35,12 +35,15 @@ pipeline {
 				branch "master"
 			}
 			steps {
-				sh """#!/usr/bin/env bash
+				withCredentials([usernamePassword(credentialsId: 'DEVPI_LOGIN', usernameVariable: 'DEVPI_USR', passwordVariable: 'DEVPI_PSW')]) {
+					sh """#!/usr/bin/env bash
 					set -xe
 					rm -rf dist
 					python3 setup.py egg_info --tag-build=${env.BUILD_NUMBER} bdist_wheel
 					twine upload -u $ARTIFACTORY_LOGIN_USR -p $ARTIFACTORY_LOGIN_PSW --repository-url https://artifactory.dbc.dk/artifactory/api/pypi/pypi-dbc dist/*
+					twine upload -u ${DEVPI_USR} -p ${DEVPI_PSW} --repository-url https://devpi.dbccloud.dk/dbc/packages dist/*
 				"""
+				}
 			}
 		}
 	}
