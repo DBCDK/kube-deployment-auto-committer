@@ -21,7 +21,15 @@ pipeline {
 	stages {
 		stage("test") {
 			steps {
-				test()
+				sh """#!/usr/bin/env bash
+					set -xe
+					rm -rf ENV
+					python3 -m venv ENV
+					source ENV/bin/activate
+					pip install -U pip
+					pip install .
+					python3 -m unittest discover -s tests
+				"""
 			}
 		}
 		stage("upload wheel package") {
