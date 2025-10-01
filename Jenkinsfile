@@ -1,4 +1,5 @@
 #!groovy
+@Library('ai') _
 
 def workerNode = "devel12"
 
@@ -19,15 +20,7 @@ pipeline {
 	stages {
 		stage("test") {
 			steps {
-				sh """#!/usr/bin/env bash
-					set -xe
-					rm -rf ENV
-					python3 -m venv ENV
-					source ENV/bin/activate
-					pip install -U pip
-					pip install .
-					python3 -m unittest discover -s tests
-				"""
+				test()
 			}
 		}
 		stage("upload wheel package") {
@@ -35,15 +28,7 @@ pipeline {
 				branch "master"
 			}
 			steps {
-				withCredentials([usernamePassword(credentialsId: 'DEVPI_LOGIN', usernameVariable: 'DEVPI_USR', passwordVariable: 'DEVPI_PSW')]) {
-					sh """#!/usr/bin/env bash
-					set -xe
-					rm -rf dist
-					python3 setup.py egg_info --tag-build=${env.BUILD_NUMBER} bdist_wheel
-					twine upload -u $ARTIFACTORY_LOGIN_USR -p $ARTIFACTORY_LOGIN_PSW --repository-url https://artifactory.dbc.dk/artifactory/api/pypi/pypi-dbc dist/*
-					twine upload -u ${DEVPI_USR} -p ${DEVPI_PSW} --repository-url https://devpi.dbccloud.dk/dbc/packages dist/*
-				"""
-				}
+				upload()
 			}
 		}
 	}
