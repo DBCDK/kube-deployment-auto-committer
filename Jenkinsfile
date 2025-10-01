@@ -12,6 +12,7 @@ pipeline {
 		}
 	}
 	environment {
+		PACKAGE = "kube-deployment-auto-committer"
 		ARTIFACTORY_LOGIN = credentials("artifactory_login")
 	}
 	triggers {
